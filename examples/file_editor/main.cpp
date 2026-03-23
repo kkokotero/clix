@@ -24,7 +24,7 @@ void print_with_line_numbers(const std::string& content) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    clix::CLI cli("file-editor", "0.3.0");
+    clix::CLI cli("file-editor", "0.3.1");
     cli.description("Read and edit small text files.");
     cli.enable_completion();
 

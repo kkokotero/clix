@@ -81,7 +81,13 @@ jobs:
         if: ${{ matrix.name == 'android-arm64' }}
         shell: bash
         run: |
+          set +o pipefail
           yes | sdkmanager --licenses >/dev/null
+          sdkmanager_status=${PIPESTATUS[1]}
+          set -o pipefail
+          if [[ "${sdkmanager_status}" -ne 0 ]]; then
+            exit "${sdkmanager_status}"
+          fi
           sdkmanager "ndk;27.2.12479018"
           echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/27.2.12479018" >> "${GITHUB_ENV}"
 

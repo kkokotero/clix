@@ -71,7 +71,7 @@ void add_binary_command(clix::CLI& cli,
 }  // namespace
 
 int main(int argc, char** argv) {
-    clix::CLI cli("calculator", "0.3.0");
+    clix::CLI cli("calculator", "0.3.1");
     cli.description("Small calculator with a few arithmetic subcommands.");
     cli.enable_completion();
 
