@@ -50,9 +50,24 @@ def update_manifest(version: str) -> None:
 
 def update_portfile(repo: str, ref: str, sha512: str) -> None:
     content = PORTFILE.read_text(encoding="utf-8")
-    content = re.sub(r"(\n\s*REPO\s+)([^\n]+)", rf"\1{repo}", content, count=1)
-    content = re.sub(r"(\n\s*REF\s+)([^\n]+)", rf"\1{ref}", content, count=1)
-    content = re.sub(r"(\n\s*SHA512\s+)([^\n]+)", rf"\1{sha512}", content, count=1)
+    content = re.sub(
+        r"(\n\s*REPO\s+)([^\n]+)",
+        lambda match: f"{match.group(1)}{repo}",
+        content,
+        count=1,
+    )
+    content = re.sub(
+        r"(\n\s*REF\s+)([^\n]+)",
+        lambda match: f"{match.group(1)}{ref}",
+        content,
+        count=1,
+    )
+    content = re.sub(
+        r"(\n\s*SHA512\s+)([^\n]+)",
+        lambda match: f"{match.group(1)}{sha512}",
+        content,
+        count=1,
+    )
     PORTFILE.write_text(content, encoding="utf-8")
 
 
