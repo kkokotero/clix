@@ -15,7 +15,7 @@ body:
     attributes:
       label: CLIX version
       description: Which released version, commit hash, or local revision are you using?
-      placeholder: v0.2.0 or 51217cd
+      placeholder: v0.2.1 or 51217cd
     validations:
       required: true
   - type: dropdown

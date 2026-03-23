@@ -69,16 +69,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: microsoft/vcpkg
-          path: vcpkg
+          path: .ci/vcpkg
 
       - name: Bootstrap vcpkg
         shell: bash
-        run: ./vcpkg/bootstrap-vcpkg.sh
+        run: ./.ci/vcpkg/bootstrap-vcpkg.sh
 
       - name: Create smoke test project
         shell: bash
         run: |
-          baseline="$(git -C vcpkg rev-parse HEAD)"
+          baseline="$(git -C .ci/vcpkg rev-parse HEAD)"
           project_dir="${RUNNER_TEMP}/clix-vcpkg-smoke"
           mkdir -p "${project_dir}"
 
@@ -120,7 +120,7 @@ jobs:
         run: >
           cmake -S "${CLIX_VCPKG_SMOKE_DIR}" -B "${CLIX_VCPKG_SMOKE_DIR}/build"
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/.ci/vcpkg/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_OVERLAY_PORTS="${GITHUB_WORKSPACE}/vcpkg/ports"
 
       - name: Build smoke test project

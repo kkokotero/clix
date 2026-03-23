@@ -1,6 +1,17 @@
 # CLIX
 
-![CLIX Logo](./docs/banner.png)
+<p align="center">
+  <img src="./docs/banner.png" alt="CLIX Logo">
+</p>
+
+<p align="center">
+  <a href="https://github.com/kkokotero/clix/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kkokotero/clix/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/kkokotero/clix/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/kkokotero/clix?sort=semver"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/kkokotero/clix"></a>
+  <a href="https://en.cppreference.com/w/cpp/17"><img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B"></a>
+  <a href="https://github.com/kkokotero/clix"><img alt="Header Only" src="https://img.shields.io/badge/header--only-yes-2ea44f"></a>
+  <a href="./vcpkg/ports/clix"><img alt="vcpkg Overlay Port" src="https://img.shields.io/badge/vcpkg-overlay%20port-1f6feb"></a>
+</p>
 
 `CLIX` is a header-only C++ CLI library for building command-line applications with a fluent API, nested subcommands, typed values, validators, config files, environment-variable support, deprecation metadata, documentation export, and shell completion.
 

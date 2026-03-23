@@ -27,7 +27,7 @@ clix::ValidatorSpec whole_number(std::string name = "whole_number") {
 }  // namespace
 
 int main(int argc, char** argv) {
-    clix::CLI cli("random-number", "0.2.0");
+    clix::CLI cli("random-number", "0.2.1");
     cli.description("Generate one or more random integers.");
     cli.enable_completion();
 
