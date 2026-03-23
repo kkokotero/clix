@@ -7,9 +7,14 @@
 <p align="center">
   <a href="https://github.com/kkokotero/clix/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kkokotero/clix/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/kkokotero/clix/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/kkokotero/clix?sort=semver"></a>
+  <a href="https://github.com/kkokotero/clix/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/kkokotero/clix/total"></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/kkokotero/clix"></a>
   <a href="https://en.cppreference.com/w/cpp/17"><img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B"></a>
+  <a href="https://cmake.org/"><img alt="CMake 3.23+" src="https://img.shields.io/badge/CMake-3.23%2B-064F8C?logo=cmake"></a>
+  <a href="https://github.com/kkokotero/clix/actions/workflows/ci.yml"><img alt="Platforms" src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-6e7781"></a>
   <a href="https://github.com/kkokotero/clix"><img alt="Header Only" src="https://img.shields.io/badge/header--only-yes-2ea44f"></a>
+  <a href="https://github.com/kkokotero/clix/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/kkokotero/clix"></a>
+  <a href="https://github.com/kkokotero/clix/issues"><img alt="Issues" src="https://img.shields.io/github/issues/kkokotero/clix"></a>
   <a href="./vcpkg/ports/clix"><img alt="vcpkg Overlay Port" src="https://img.shields.io/badge/vcpkg-overlay%20port-1f6feb"></a>
 </p>
 
@@ -18,6 +23,14 @@
 ## Why CLIX Exists
 
 `CLIX` was created to make modern C++ CLIs feel less fragmented.
+
+It also grew out of a more practical goal: improving the day-to-day experience for the people building CLIs with `CLIX`, and improving the day-to-day experience for the people who run those CLIs.
+
+That means better DX for CLI authors and better UX for CLI users:
+
+- schemas that stay readable while applications grow
+- command definitions that can be reused and documented from one source of truth
+- errors, help output, completion, and defaults that feel clearer at runtime
 
 Many existing libraries are strong at parsing flags, but once you also need:
 
