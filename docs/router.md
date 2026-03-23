@@ -46,7 +46,7 @@ clix::Router make_project_router() {
 }
 
 int main(int argc, char** argv) {
-    clix::CLI cli("workspace", "0.2.1");
+    clix::CLI cli("workspace", "0.3.0");
 
     clix::Router app_router;
     app_router.use("project", make_project_router());

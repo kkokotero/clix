@@ -16,6 +16,7 @@
 #include <clix/cli.hpp>
 #include <clix/completion.hpp>
 #include <clix/config.hpp>
+#include <clix/platform.hpp>
 #include <clix/router.hpp>
 #include <clix/validators.hpp>
 
@@ -1125,6 +1126,62 @@ void test_deprecated_commands_options_schema_and_markdown_are_exposed() {
     expect_contains(markdown, "Deprecated aliases", "markdown deprecated aliases");
 }
 
+void test_platform_helpers_report_current_target_consistently() {
+    constexpr auto info = clix::platform::current_info();
+
+    expect(info.kind != clix::platform::Kind::Unknown, "platform kind should be detected");
+    expect(!clix::platform::name().empty(), "platform name should not be empty");
+    expect(!clix::platform::family_name(info.family).empty(), "platform family name should not be empty");
+    expect_equal(info.kind, clix::platform::current(), "platform current kind");
+    expect_equal(info.family, clix::platform::family(), "platform family");
+    expect_equal(info.is_apple, clix::platform::is_apple(), "platform apple helper");
+    expect_equal(info.is_bsd, clix::platform::is_bsd(), "platform bsd helper");
+    expect_equal(info.is_mobile, clix::platform::is_mobile(), "platform mobile helper");
+    expect_equal(info.is_posix, clix::platform::is_posix(), "platform posix helper");
+    expect_equal(info.is_desktop, clix::platform::is_desktop(), "platform desktop helper");
+    expect(info.has_filesystem, "supported targets should have filesystem support");
+    expect(info.has_process_environment, "supported targets should expose process environments");
+
+#if defined(_WIN32)
+    expect_equal(info.kind, clix::platform::Kind::Windows, "windows platform kind");
+    expect_equal(info.family, clix::platform::Family::Windows, "windows platform family");
+    expect(!info.is_posix, "windows should not report posix");
+#elif defined(__ANDROID__)
+    expect_equal(info.kind, clix::platform::Kind::Android, "android platform kind");
+    expect_equal(info.family, clix::platform::Family::Android, "android platform family");
+    expect(info.is_mobile, "android should report mobile");
+    expect(info.is_posix, "android should report posix");
+#elif defined(__APPLE__)
+    expect_equal(info.family, clix::platform::Family::Apple, "apple platform family");
+    if (info.is_mobile) {
+        expect_equal(info.kind, clix::platform::Kind::Ios, "ios platform kind");
+    } else {
+        expect_equal(info.kind, clix::platform::Kind::Macos, "macos platform kind");
+    }
+    expect(info.is_posix, "apple targets should report posix");
+#elif defined(__linux__)
+    expect_equal(info.kind, clix::platform::Kind::Linux, "linux platform kind");
+    expect_equal(info.family, clix::platform::Family::Linux, "linux platform family");
+    expect(info.is_posix, "linux should report posix");
+#elif defined(__FreeBSD__)
+    expect_equal(info.kind, clix::platform::Kind::Freebsd, "freebsd platform kind");
+    expect_equal(info.family, clix::platform::Family::Bsd, "freebsd platform family");
+    expect(info.is_bsd, "freebsd should report bsd");
+#elif defined(__OpenBSD__)
+    expect_equal(info.kind, clix::platform::Kind::Openbsd, "openbsd platform kind");
+    expect_equal(info.family, clix::platform::Family::Bsd, "openbsd platform family");
+    expect(info.is_bsd, "openbsd should report bsd");
+#elif defined(__NetBSD__)
+    expect_equal(info.kind, clix::platform::Kind::Netbsd, "netbsd platform kind");
+    expect_equal(info.family, clix::platform::Family::Bsd, "netbsd platform family");
+    expect(info.is_bsd, "netbsd should report bsd");
+#elif defined(__DragonFly__)
+    expect_equal(info.kind, clix::platform::Kind::Dragonflybsd, "dragonflybsd platform kind");
+    expect_equal(info.family, clix::platform::Family::Bsd, "dragonflybsd platform family");
+    expect(info.is_bsd, "dragonflybsd should report bsd");
+#endif
+}
+
 }  // namespace
 
 int main() {
@@ -1166,6 +1223,8 @@ int main() {
          test_command_bundles_improve_reuse_without_duplicating_schema},
         {"deprecated_commands_options_schema_and_markdown_are_exposed",
          test_deprecated_commands_options_schema_and_markdown_are_exposed},
+        {"platform_helpers_report_current_target_consistently",
+         test_platform_helpers_report_current_target_consistently},
     };
 
     std::size_t failures = 0;

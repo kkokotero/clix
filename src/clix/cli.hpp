@@ -79,7 +79,7 @@ class CLI : public Command {
 public:
     using EnvironmentReader = std::function<std::optional<std::string>(std::string_view)>;
 
-    explicit CLI(std::string name = {}, std::string version = "0.2.1")
+    explicit CLI(std::string name = {}, std::string version = "0.3.0")
         : Command(std::move(name))
         , version_(std::move(version)) {}
 

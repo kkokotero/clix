@@ -11,7 +11,7 @@
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/kkokotero/clix"></a>
   <a href="https://en.cppreference.com/w/cpp/17"><img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B"></a>
   <a href="https://cmake.org/"><img alt="CMake 3.23+" src="https://img.shields.io/badge/CMake-3.23%2B-064F8C?logo=cmake"></a>
-  <a href="https://github.com/kkokotero/clix/actions/workflows/ci.yml"><img alt="Platforms" src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-6e7781"></a>
+  <a href="https://github.com/kkokotero/clix/blob/main/docs/platforms.md"><img alt="Target Platforms" src="https://img.shields.io/badge/targets-linux%20%7C%20macos%20%7C%20windows%20%7C%20ios%20%7C%20android%20%7C%20bsd-6e7781"></a>
   <a href="https://github.com/kkokotero/clix"><img alt="Header Only" src="https://img.shields.io/badge/header--only-yes-2ea44f"></a>
   <a href="https://github.com/kkokotero/clix/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/kkokotero/clix"></a>
   <a href="https://github.com/kkokotero/clix/issues"><img alt="Issues" src="https://img.shields.io/github/issues/kkokotero/clix"></a>
@@ -61,6 +61,7 @@ The project also keeps a few strong constraints on purpose:
 - Header-only package with clean `find_package(clix CONFIG REQUIRED)` integration
 - No external runtime dependencies
 - C++17 baseline
+- Portable core across Linux, macOS, Windows, iOS, Android, and BSD-oriented toolchains
 - Modular public includes through `<clix/...>`
 - Fluent builders for arguments and options
 - Optional routers for modular command registration in large projects
@@ -95,6 +96,7 @@ Preferred modular includes:
 
 ```cpp
 #include <clix/cli.hpp>
+#include <clix/platform.hpp>
 #include <clix/validators.hpp>
 #include <clix/router.hpp>
 ```
@@ -126,6 +128,41 @@ target_link_libraries(your_target PRIVATE clix::clix)
 ```
 
 This repository still keeps the port upstream-friendly. If `clix` later meets the curated-registry maturity bar, the same port can be used as the base for another submission to `microsoft/vcpkg`.
+
+## Platform Support
+
+`CLIX` keeps the core portable on purpose. The parser, schema model, config resolution, validators, and Markdown export rely on standard C++17 facilities instead of platform-specific runtime dependencies.
+
+Targeted platforms today:
+
+- Linux
+- macOS
+- Windows
+- iOS and iOS Simulator
+- Android through the NDK
+- FreeBSD, OpenBSD, NetBSD, and DragonFly BSD
+
+Validation levels:
+
+- Native CI: Linux, macOS, and Windows
+- Cross-toolchain smoke coverage: iOS Simulator headers and Android NDK headers
+- Source-compatible targets: BSD toolchains, documented and detected through `<clix/platform.hpp>`, but not yet hosted in this repository's CI
+
+Notes:
+
+- Generated completion scripts are portable, but interactive shell integration still depends on the shell that exists on the target device or host environment.
+- Filesystem-driven features such as `ValueKind::path`, config probing, and path completion require a standard library implementation with `std::filesystem`.
+- Applications can use `<clix/platform.hpp>` to register platform-aware commands without scattering preprocessor logic through the rest of the codebase.
+
+```cpp
+#include <clix/platform.hpp>
+
+if (clix::platform::is_mobile()) {
+    cli.command("sync").description("Sync local data on mobile targets.");
+} else {
+    cli.command("shell").description("Open an interactive shell workflow.");
+}
+```
 
 ## Quick Start
 
@@ -171,6 +208,8 @@ int main(int argc, char** argv) {
   - The immutable runtime view delivered to handlers.
 - `clix::Router`
   - An optional composition layer for modular command registration.
+- `clix::platform`
+  - Compile-time friendly platform helpers for portable command registration.
 
 The same declared schema drives:
 

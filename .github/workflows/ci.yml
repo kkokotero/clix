@@ -57,6 +57,59 @@ jobs:
         shell: bash
         run: cmake --install build --config ${{ matrix.build_type }} --prefix "$RUNNER_TEMP/clix-install"
 
+  cross-target-header-smoke:
+    name: ${{ matrix.name }} header smoke
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ios-simulator
+            os: macos-latest
+          - name: android-arm64
+            os: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Android SDK
+        if: ${{ matrix.name == 'android-arm64' }}
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        if: ${{ matrix.name == 'android-arm64' }}
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "ndk;27.2.12479018"
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/27.2.12479018" >> "${GITHUB_ENV}"
+
+      - name: Compile iOS simulator smoke
+        if: ${{ matrix.name == 'ios-simulator' }}
+        shell: bash
+        run: |
+          sdk_path="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          clangxx="$(xcrun --sdk iphonesimulator --find clang++)"
+          "${clangxx}" \
+            -std=c++17 \
+            -stdlib=libc++ \
+            -fsyntax-only \
+            -isysroot "${sdk_path}" \
+            -I"${GITHUB_WORKSPACE}/src" \
+            "${GITHUB_WORKSPACE}/tests/platform_smoke.cpp"
+
+      - name: Compile Android NDK smoke
+        if: ${{ matrix.name == 'android-arm64' }}
+        shell: bash
+        run: |
+          clangxx="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang++"
+          "${clangxx}" \
+            -std=c++17 \
+            -fsyntax-only \
+            -I"${GITHUB_WORKSPACE}/src" \
+            "${GITHUB_WORKSPACE}/tests/platform_smoke.cpp"
+
   vcpkg-smoke-test:
     name: vcpkg smoke test
     runs-on: ubuntu-latest
