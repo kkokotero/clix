@@ -1,0 +1,67 @@
+# Architecture
+
+`clix` is built around a simple idea: define a command schema once and reuse it for the full command-line workflow.
+
+The same command model drives:
+
+- parsing
+- validation
+- help output
+- config file loading
+- environment-variable resolution
+- shell completion
+
+## Core Types
+
+- `clix::CLI`: root command entry point
+- `clix::Command`: reusable command builder for root and nested commands
+- `clix::Invocation`: immutable runtime view delivered to handlers
+- `clix::Router`: optional composition layer for modular command registration
+
+## Design Principles
+
+- Keep the public API small and readable.
+- Prefer composition over inheritance.
+- Let metadata power multiple runtime features.
+- Avoid external dependencies.
+- Stay friendly to older C++ standards where practical.
+
+## Command Schema
+
+Commands are trees. Each node can define:
+
+- subcommands
+- positional arguments
+- options
+- option groups
+- validators
+- config-backed values
+- completion metadata
+- one action handler
+
+This makes `clix` a schema-driven CLI runtime rather than a plain option parser.
+
+## Parsing Flow
+
+At runtime `clix` resolves values in this order:
+
+1. command line
+2. environment variables
+3. config file
+4. default values
+
+After values are resolved, validators and option relationships are enforced.
+
+## When To Use Routers
+
+Use the raw builder API when:
+
+- your CLI is small
+- all commands live near one another
+- you want the lowest possible abstraction
+
+Use `clix::Router` when:
+
+- your command tree is spread across multiple modules
+- different teams own different command branches
+- you want to mount reusable command bundles under a shared prefix

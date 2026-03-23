@@ -1,0 +1,3 @@
+add_executable(clix_benchmarks benchmark_main.cpp)
+target_link_libraries(clix_benchmarks PRIVATE clix::clix)
+target_compile_features(clix_benchmarks PRIVATE cxx_std_17)

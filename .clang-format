@@ -1,0 +1,32 @@
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++23
+
+IndentWidth: 4
+TabWidth: 4
+ContinuationIndentWidth: 4
+UseTab: Never
+
+ColumnLimit: 100
+BreakBeforeBraces: Attach
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+NamespaceIndentation: All
+FixNamespaceComments: true
+ReflowComments: true
+
+SortIncludes: true
+IncludeBlocks: Regroup
+SortUsingDeclarations: LexicographicNumeric
+
+BinPackArguments: false
+BinPackParameters: false
+AlignAfterOpenBracket: Align

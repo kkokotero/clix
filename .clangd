@@ -1,0 +1,27 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add: [-Wall, -Wextra, -Wpedantic]
+
+Index:
+  Background: Build
+
+Completion:
+  AllScopes: Yes
+  DetailedLabel: Yes
+  ArgumentLists: FullPlaceholders
+
+InlayHints:
+  Enabled: Yes
+  ParameterNames: Yes
+  DeducedTypes: Yes
+
+Hover:
+  ShowAKA: Yes
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    Add: [bugprone-*, performance-*, readability-*, modernize-*]
+    Remove: [readability-identifier-length]
+
+HeaderInsertion: Iwyu

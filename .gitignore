@@ -1,0 +1,70 @@
+# Build/install outputs
+build/
+install/
+out/
+bin/
+dist/
+release/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+Makefile
+build.ninja
+.ninja_log
+.ninja_deps
+compile_commands.json
+
+# Toolchain/deps
+vcpkg_installed/
+
+# Compiled objects and binaries
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.lib
+*.exp
+*.map
+
+# Coverage/profiling
+*.prof
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+*.gcov
+*.coverage
+
+# Temp/editor files
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+.ccache/
+
+# Python helpers
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env/
+
+# IDE/system
+.vscode/
+.idea/
+.vs/
+.DS_Store
+Thumbs.db
