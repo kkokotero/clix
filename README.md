@@ -1,26 +1,59 @@
-# clix
+# CLIX
 
-`clix` is a header-only C++ CLI library for building command-line applications with a fluent API, nested subcommands, validators, config files, environment-variable support, and shell completion.
+![CLIX Logo](./docs/banner.png)
+
+`CLIX` is a header-only C++ CLI library for building command-line applications with a fluent API, nested subcommands, validators, config files, environment-variable support, and shell completion.
+
+## Why CLIX Exists
+
+`CLIX` was created to make modern C++ CLIs feel less fragmented.
+
+Many existing libraries are strong at parsing flags, but once you also need:
+
+- nested command trees
+- readable help
+- validation
+- environment-variable fallbacks
+- config-backed values
+- shell completion
+
+you often end up stitching several ideas together by hand.
+
+`CLIX` takes a schema-driven approach instead: define the command model once, then reuse that same metadata for parsing, validation, help output, config loading, environment resolution, and completion.
+
+The project also keeps a few strong constraints on purpose:
+
+- header-only distribution
+- no external runtime dependencies
+- readable C++17 API
+- modular includes through `<CLIX/...>`
+- features that stay small enough to understand
 
 ## Highlights
 
-- Header-only package with clean `find_package(clix CONFIG REQUIRED)` integration
+- Header-only package with clean `find_package(CLIX CONFIG REQUIRED)` integration
 - No external runtime dependencies
 - C++17 baseline
-- Modular public includes through `<clix/...>`
+- Modular public includes through `<CLIX/...>`
 - Fluent builders for arguments and options
 - Optional routers for modular command registration in large projects
 - Nested subcommands with inherited global options
 - Validators, config files, environment variables, and shell completion driven by the same command schema
 - Readable error messages with hints for invalid input
 
+## Project Health
+
+- [Contributing guide](./CONTRIBUTING.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [Security Policy](./SECURITY.md)
+
 ## Installation
 
 ### CMake package
 
 ```cmake
-find_package(clix CONFIG REQUIRED)
-target_link_libraries(your_target PRIVATE clix::clix)
+find_package(CLIX CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE CLIX::CLIX)
 ```
 
 ### Includes
@@ -28,15 +61,15 @@ target_link_libraries(your_target PRIVATE clix::clix)
 Preferred modular includes:
 
 ```cpp
-#include <clix/cli.hpp>
-#include <clix/validators.hpp>
-#include <clix/router.hpp>
+#include <CLIX/cli.hpp>
+#include <CLIX/validators.hpp>
+#include <CLIX/router.hpp>
 ```
 
 Umbrella include:
 
 ```cpp
-#include <clix.hpp>
+#include <CLIX.hpp>
 ```
 
 ## Quick Start
@@ -46,17 +79,17 @@ Umbrella include:
 #include <iostream>
 #include <string>
 
-#include <clix/cli.hpp>
+#include <CLIX/cli.hpp>
 
 int main(int argc, char** argv) {
-    clix::CLI cli("hello", "1.0.0");
-    cli.description("Small example built with clix.");
+    CLIX::CLI cli("hello", "1.0.0");
+    cli.description("Small example built with CLIX.");
 
     auto& greet = cli.command("greet").description("Print a greeting.");
     greet.arg("name").description("Name to greet.").label("name");
     greet.opt("caps").alias("c").description("Render the greeting in uppercase.");
 
-    greet.action([](const clix::Invocation& invocation) {
+    greet.action([](const CLIX::Invocation& invocation) {
         auto message = std::string("Hello, ") + invocation.argument<std::string>("name") + "!";
         if (invocation.option<bool>("caps")) {
             for (auto& character : message) {
@@ -71,6 +104,28 @@ int main(int argc, char** argv) {
 }
 ```
 
+## Design Model
+
+`CLIX` is centered on a small set of runtime types:
+
+- `CLIX::CLI`
+  - The root command entry point.
+- `CLIX::Command`
+  - The builder used by the root and by nested subcommands.
+- `CLIX::Invocation`
+  - The immutable runtime view delivered to handlers.
+- `CLIX::Router`
+  - An optional composition layer for modular command registration.
+
+The same declared schema drives:
+
+- parsing
+- help generation
+- validation
+- config loading
+- environment-variable resolution
+- shell completion
+
 ## Fluent API
 
 The builder API is intentionally small and predictable:
@@ -80,14 +135,14 @@ create.arg("name")
     .description("Project name.")
     .label("name")
     .env("WORKSPACE_NAME")
-    .validate(clix::validators::non_empty_string());
+    .validate(CLIX::validators::non_empty_string());
 
-create.opt("jobs", clix::ValueKind::number)
+create.opt("jobs", CLIX::ValueKind::number)
     .alias("j")
     .description("Parallel jobs.")
     .label("count")
-    .default_value(clix::CliValue(4.0))
-    .validate(clix::validators::number_range(1.0, 32.0));
+    .default_value(CLIX::CliValue(4.0))
+    .validate(CLIX::validators::number_range(1.0, 32.0));
 ```
 
 Available builder features include:
@@ -107,18 +162,36 @@ Available builder features include:
 - `exclusive_group(...)`
 - `hidden()`
 
-## Routers
+## Supported Value Types
 
-`clix::Router` lets large applications register commands in modules and mount them under prefixes.
+`CLIX` supports these logical value kinds out of the box:
+
+| Value kind | C++ runtime type | Typical use |
+| --- | --- | --- |
+| `ValueKind::boolean` | `bool` | feature flags, toggles |
+| `ValueKind::string` | `std::string` | free-form text |
+| `ValueKind::number` | `double` | numeric parameters |
+| `ValueKind::choice` | `std::string` | enumerated string values |
+| `ValueKind::path` | `CLIX::Path` | files and directories |
+| `ValueKind::time` | `CLIX::Time` | durations / time-like values |
+| `ValueKind::size` | `CLIX::Size` | memory / byte-size values |
+| `ValueKind::json` | `CLIX::JsonObject` | structured JSON payloads |
+| `ValueKind::boolean_array` | `std::vector<bool>` | repeated booleans |
+| `ValueKind::string_array` | `std::vector<std::string>` | repeated strings |
+| `ValueKind::number_array` | `std::vector<double>` | repeated numbers |
+| `ValueKind::path_array` | `std::vector<CLIX::Path>` | repeated paths |
+| `ValueKind::time_array` | `std::vector<CLIX::Time>` | repeated durations |
+| `ValueKind::size_array` | `std::vector<CLIX::Size>` | repeated sizes |
+
+Examples:
 
 ```cpp
-clix::Router app_router;
-app_router.use("project", make_project_router());
-app_router.use("release", make_release_router());
-app_router.mount(cli);
+command.opt("verbose");  // boolean
+command.opt("jobs", CLIX::ValueKind::number);  // double
+command.opt("format", CLIX::ValueKind::choice).choices({"json", "yaml"});
+command.arg("manifest", CLIX::ValueKind::path);
+command.opt("tag", CLIX::ValueKind::string_array);
 ```
-
-This keeps command registration modular while preserving the same `Command` builder API inside each module.
 
 ## Nested Subcommands
 
@@ -136,20 +209,33 @@ Global options declared on parent commands are visible from child commands, even
 workspace --verbose project create app
 ```
 
+## Routers
+
+`CLIX::Router` lets large applications register commands in modules and mount them under prefixes.
+
+```cpp
+CLIX::Router app_router;
+app_router.use("project", make_project_router());
+app_router.use("release", make_release_router());
+app_router.mount(cli);
+```
+
+This keeps command registration modular while preserving the same `Command` builder API inside each module.
+
 ## Validators
 
 Built-in validators include:
 
-- `clix::validators::non_empty_string()`
-- `clix::validators::number_range(min, max)`
-- `clix::validators::positive_number()`
-- `clix::validators::existing_path()`
+- `CLIX::validators::non_empty_string()`
+- `CLIX::validators::number_range(min, max)`
+- `CLIX::validators::positive_number()`
+- `CLIX::validators::existing_path()`
 
 Custom validators are regular callables that return `std::optional<std::string>`.
 
 ## Option Relationships
 
-`clix` supports a few high-value option relationships without forcing a large DSL:
+`CLIX` supports a few high-value option relationships without forcing a large DSL:
 
 ```cpp
 command.opt("push").requires("token");
@@ -164,49 +250,119 @@ This covers:
 - conflicting options
 - mutually exclusive sets
 
-## Config Files
-
-Enable config file loading once on the root CLI:
-
-```cpp
-cli.enable_config_files();
-```
-
-Supported syntax:
-
-```ini
-language = ts
-format = yaml
-
-[project.create]
-name = from-config
-jobs = 4
-region = us-east-1
-```
-
-Precedence is:
-
-1. Command line
-2. Environment variables
-3. Config file
-4. Default values
-
-Strict mode is enabled by default, so unknown config keys fail fast.
-
 ## Environment Variables
 
 Arguments and options can read from one or more environment variables:
 
 ```cpp
 command.arg("name").env("APP_NAME");
-command.opt("language", clix::ValueKind::choice).env("APP_LANGUAGE");
+command.opt("language", CLIX::ValueKind::choice).env("APP_LANGUAGE");
 ```
 
 This is useful when you want non-interactive defaults without giving up the command-line UX.
 
+### Custom Environment Readers
+
+Environment-variable lookup is parameterizable.
+
+By default `CLIX` reads from the process environment through `std::getenv`.
+
+You can also provide a custom reader:
+
+```cpp
+CLIX::CLI cli("demo");
+
+cli.environment_reader([](std::string_view name) -> std::optional<std::string> {
+    if (name == "APP_NAME") {
+        return std::string("from-custom-source");
+    }
+    return std::nullopt;
+});
+```
+
+If the custom reader does not return a value, `CLIX` still falls back to `std::getenv`.
+
+This is useful for:
+
+- tests
+- embedded runtimes
+- custom secret/config backends
+- adapters that do not want to depend directly on process-global environment state
+
+## Config Files
+
+Enable config file loading once on the root CLI:
+
+```cpp
+CLIX::ConfigFileSettings config;
+config.environment_variables = {"APP_CONFIG"};
+config.default_filenames = {"app.toml", "app.json"};
+config.allowed_extensions = {".toml", ".json"};
+
+cli.enable_config_files(config);
+```
+
+`CLIX` supports only:
+
+- `.toml`
+- `.json`
+
+That restriction is intentional: it keeps the loader predictable and dependency-free.
+
+### Config Discovery
+
+When config loading is enabled, `CLIX` looks for a config file in this order:
+
+1. the explicit `--config <path>` option
+2. the first non-empty environment variable listed in `ConfigFileSettings::environment_variables`
+3. the first existing path listed in `ConfigFileSettings::default_filenames`
+
+If a configured path does not include an extension, `CLIX` probes the configured `allowed_extensions` in order. With the default settings, `app` will resolve to `app.toml` first and then `app.json`.
+
+### Value Precedence
+
+After the config file is found, value precedence remains:
+
+1. command line
+2. config file
+3. environment variables
+4. default values
+
+### TOML Example
+
+```toml
+language = "ts"
+format = "yaml"
+
+[project.create]
+name = "from-config"
+jobs = 4
+region = "us-east-1"
+tag = ["core", "cli"]
+```
+
+### JSON Example
+
+```json
+{
+  "language": "ts",
+  "format": "yaml",
+  "project": {
+    "create": {
+      "name": "from-config",
+      "jobs": 4,
+      "region": "us-east-1",
+      "tag": ["core", "cli"]
+    }
+  }
+}
+```
+
+Strict mode is enabled by default, so unknown config keys fail fast.
+
 ## Passthrough
 
-For wrapper-style commands, `clix` can preserve unknown options and extra arguments:
+For wrapper-style commands, `CLIX` can preserve unknown options and extra arguments:
 
 ```cpp
 auto& run = cli.command("run").allow_passthrough();
@@ -220,7 +376,7 @@ invocation.passthrough_tokens()
 
 ## Shell Completion
 
-`clix` can generate completion scripts for:
+`CLIX` can generate completion scripts for:
 
 - Bash
 - Zsh
@@ -255,13 +411,14 @@ Completion can suggest:
 
 ## Error Handling
 
-The parser now fails fast on malformed invocations such as:
+The parser fails fast on malformed invocations such as:
 
 - missing option values
 - `app --`
 - unknown commands
 - conflicting options
 - missing related options
+- unsupported config extensions
 
 Errors include context and, when possible, suggestions.
 
@@ -281,7 +438,7 @@ Errors include context and, when possible, suggestions.
 - [docs/project-layout.md](docs/project-layout.md)
 - [docs/benchmarks.md](docs/benchmarks.md)
 
-Build them with:
+Build the examples with:
 
 ```bash
 cmake --preset default -DCLIX_BUILD_EXAMPLES=ON
@@ -295,7 +452,7 @@ Build and run the benchmark harness with:
 ```bash
 cmake --preset default -DCLIX_BUILD_BENCHMARKS=ON
 cmake --build build -j
-./build/benchmarks/clix_benchmarks
+./build/benchmarks/CLIX_benchmarks
 ```
 
 ## Tests
@@ -306,7 +463,10 @@ The test suite covers:
 - defaults and required values
 - validators
 - config parsing and precedence
+- TOML and JSON config loading
 - environment variables
+- custom environment readers
+- config discovery through env vars and default filenames
 - global options before subcommands
 - short option groups with inline values
 - passthrough mode

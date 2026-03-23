@@ -139,11 +139,18 @@ private:
     return config;
 }
 
+[[nodiscard]] clix::ConfigFileSettings make_demo_config_settings() {
+    clix::ConfigFileSettings settings;
+    settings.environment_variables = {"DEMO_CONFIG"};
+    settings.default_filenames = {"demo.toml", "demo.json"};
+    return settings;
+}
+
 [[nodiscard]] std::unique_ptr<clix::CLI> make_demo_cli(DemoCapture& capture) {
     auto cli = std::make_unique<clix::CLI>("demo", "1.2.3");
     cli->description("Integration fixture used by the test suite.");
     cli->enable_completion();
-    cli->enable_config_files();
+    cli->enable_config_files(make_demo_config_settings());
     cli->opt("verbose")
         .alias("V")
         .description("Enable verbose output.");
@@ -336,16 +343,16 @@ void test_existing_path_validator_accepts_and_rejects() {
 
 void test_config_file_supplies_missing_values_and_merges_sections() {
     TempDirectory temp_directory;
-    const auto config_path = temp_directory.path() / "demo.ini";
+    const auto config_path = temp_directory.path() / "demo.toml";
 
     std::ofstream stream(config_path);
-    stream << "language = ts\n";
-    stream << "format = yaml\n";
+    stream << "language = \"ts\"\n";
+    stream << "format = \"yaml\"\n";
     stream << "[project.create]\n";
-    stream << "name = from-config\n";
+    stream << "name = \"from-config\"\n";
     stream << "jobs = 4\n";
-    stream << "region = us-east-1\n";
-    stream << "tag = core, cli\n";
+    stream << "region = \"us-east-1\"\n";
+    stream << "tag = [\"core\", \"cli\"]\n";
     stream.close();
 
     DemoCapture capture;
@@ -363,12 +370,18 @@ void test_config_file_supplies_missing_values_and_merges_sections() {
 
 void test_command_line_values_override_config_values() {
     TempDirectory temp_directory;
-    const auto config_path = temp_directory.path() / "override.ini";
+    const auto config_stem = temp_directory.path() / "override";
+    const auto config_path = config_stem.string() + ".json";
 
     std::ofstream stream(config_path);
-    stream << "language = ts\n";
-    stream << "[project.create]\n";
-    stream << "name = from-config\n";
+    stream << "{\n";
+    stream << "  \"language\": \"ts\",\n";
+    stream << "  \"project\": {\n";
+    stream << "    \"create\": {\n";
+    stream << "      \"name\": \"from-config\"\n";
+    stream << "    }\n";
+    stream << "  }\n";
+    stream << "}\n";
     stream.close();
 
     DemoCapture capture;
@@ -376,7 +389,7 @@ void test_command_line_values_override_config_values() {
 
     const auto result = run_cli(
         *cli,
-        {"project", "create", "from-cli", "--config", config_path.string(), "--language", "cpp"});
+        {"project", "create", "from-cli", "--config", config_stem.string(), "--language", "cpp"});
     expect_equal(result.exit_code, 0, "override create exit code");
     expect_equal(capture.name, std::string("from-cli"), "command line name wins");
     expect_equal(capture.language, std::string("cpp"), "command line option wins");
@@ -384,12 +397,12 @@ void test_command_line_values_override_config_values() {
 
 void test_strict_config_rejects_unknown_keys() {
     TempDirectory temp_directory;
-    const auto config_path = temp_directory.path() / "strict.ini";
+    const auto config_path = temp_directory.path() / "strict.toml";
 
     std::ofstream stream(config_path);
     stream << "[project.create]\n";
-    stream << "name = widget\n";
-    stream << "unknown = value\n";
+    stream << "name = \"widget\"\n";
+    stream << "unknown = \"value\"\n";
     stream.close();
 
     DemoCapture capture;
@@ -499,15 +512,21 @@ void test_global_options_before_subcommand_are_supported() {
     expect(contains_value(suggestions, "create"), "completion should still see subcommands after global options");
 }
 
-void test_environment_values_have_higher_precedence_than_config() {
+void test_config_values_have_higher_precedence_than_environment() {
     TempDirectory temp_directory;
-    const auto config_path = temp_directory.path() / "env-priority.ini";
+    const auto config_stem = temp_directory.path() / "config-priority";
+    const auto config_path = config_stem.string() + ".json";
 
     std::ofstream stream(config_path);
-    stream << "language = cpp\n";
-    stream << "[project.create]\n";
-    stream << "name = from-config\n";
-    stream << "jobs = 2\n";
+    stream << "{\n";
+    stream << "  \"language\": \"cpp\",\n";
+    stream << "  \"project\": {\n";
+    stream << "    \"create\": {\n";
+    stream << "      \"name\": \"from-config\",\n";
+    stream << "      \"jobs\": 2\n";
+    stream << "    }\n";
+    stream << "  }\n";
+    stream << "}\n";
     stream.close();
 
     ScopedEnvVar env_name("DEMO_NAME", "from-env");
@@ -517,11 +536,183 @@ void test_environment_values_have_higher_precedence_than_config() {
     DemoCapture capture;
     auto cli = make_demo_cli(capture);
 
+    const auto result = run_cli(*cli, {"project", "create", "--config", config_stem.string()});
+    expect_equal(result.exit_code, 0, "config precedence exit code");
+    expect_equal(capture.name, std::string("from-config"), "config should override environment for arguments");
+    expect_equal(capture.language, std::string("cpp"), "config should override environment for options");
+    expect_equal(capture.jobs, 2.0, "config numeric value should override environment");
+}
+
+void test_config_path_can_come_from_environment_or_default_filename() {
+    TempDirectory temp_directory;
+    const auto env_config_stem = temp_directory.path() / "from-env";
+    const auto default_config_stem = temp_directory.path() / "demo";
+    const auto env_config_path = env_config_stem.string() + ".toml";
+    const auto default_config_path = default_config_stem.string() + ".json";
+
+    {
+        std::ofstream stream(env_config_path);
+        stream << "[project.create]\n";
+        stream << "name = \"from-env-config\"\n";
+    }
+    {
+        std::ofstream stream(default_config_path);
+        stream << "{\n";
+        stream << "  \"project\": {\n";
+        stream << "    \"create\": {\n";
+        stream << "      \"name\": \"from-default-file\"\n";
+        stream << "    }\n";
+        stream << "  }\n";
+        stream << "}\n";
+    }
+
+    DemoCapture env_capture;
+    auto env_cli = make_demo_cli(env_capture);
+    env_cli->environment_reader(
+        [env_config_stem](std::string_view name) -> std::optional<std::string> {
+            if (name == "DEMO_CONFIG") {
+                return env_config_stem.string();
+            }
+            return std::nullopt;
+        });
+
+    const auto env_result = run_cli(*env_cli, {"project", "create"});
+    expect_equal(env_result.exit_code, 0, "config from environment exit code");
+    expect_equal(env_capture.name, std::string("from-env-config"), "config path should be resolved from environment");
+
+    DemoCapture default_capture;
+    auto default_cli = make_demo_cli(default_capture);
+    auto settings = make_demo_config_settings();
+    settings.environment_variables.clear();
+    settings.default_filenames = {default_config_stem.string()};
+
+    default_cli = std::make_unique<clix::CLI>("demo", "1.2.3");
+    default_cli->description("Integration fixture used by the test suite.");
+    default_cli->enable_completion();
+    default_cli->enable_config_files(settings);
+    default_cli->opt("verbose")
+        .alias("V")
+        .description("Enable verbose output.");
+
+    auto& project = default_cli->command("project").description("Project lifecycle commands.");
+    auto& create = project.command("create").description("Create a project from a starter template.");
+
+    auto name_argument = make_argument_config(clix::ValueKind::string, "Project name.", "name");
+    create.argument("name", std::move(name_argument));
+    create.action([&default_capture](const clix::Invocation& invocation) {
+        default_capture.name = invocation.argument<std::string>("name");
+    });
+
+    const auto default_result = run_cli(*default_cli, {"project", "create"});
+    expect_equal(default_result.exit_code, 0, "config from default filename exit code");
+    expect_equal(default_capture.name,
+                 std::string("from-default-file"),
+                 "config path should be resolved from default filenames");
+}
+
+void test_custom_environment_reader_supplies_declared_values() {
+    DemoCapture capture;
+    auto cli = make_demo_cli(capture);
+
+    cli->environment_reader([](std::string_view name) -> std::optional<std::string> {
+        if (name == "DEMO_NAME") {
+            return std::string("reader-name");
+        }
+        if (name == "DEMO_LANGUAGE") {
+            return std::string("ts");
+        }
+        if (name == "DEMO_JOBS") {
+            return std::string("5");
+        }
+        return std::nullopt;
+    });
+
+    const auto result = run_cli(*cli, {"project", "create"});
+    expect_equal(result.exit_code, 0, "custom environment reader exit code");
+    expect_equal(capture.name, std::string("reader-name"), "custom reader should resolve argument values");
+    expect_equal(capture.language, std::string("ts"), "custom reader should resolve option values");
+    expect_equal(capture.jobs, 5.0, "custom reader should resolve numeric option values");
+}
+
+void test_process_environment_is_used_even_with_custom_reader() {
+    ScopedEnvVar env_name("DEMO_NAME", "from-process-env");
+
+    DemoCapture capture;
+    auto cli = make_demo_cli(capture);
+
+    cli->environment_reader([](std::string_view name) -> std::optional<std::string> {
+        if (name == "UNUSED_NAME") {
+            return std::string("never-used");
+        }
+        return std::nullopt;
+    });
+
+    const auto result = run_cli(*cli, {"project", "create"});
+    expect_equal(result.exit_code, 0, "process environment fallback exit code");
+    expect_equal(capture.name,
+                 std::string("from-process-env"),
+                 "process environment should still be consulted when the custom reader has no value");
+}
+
+void test_unsupported_config_extensions_are_rejected() {
+    TempDirectory temp_directory;
+    const auto config_path = temp_directory.path() / "invalid.yaml";
+
+    std::ofstream stream(config_path);
+    stream << "name: invalid\n";
+    stream.close();
+
+    DemoCapture capture;
+    auto cli = make_demo_cli(capture);
+
     const auto result = run_cli(*cli, {"project", "create", "--config", config_path.string()});
-    expect_equal(result.exit_code, 0, "env precedence exit code");
-    expect_equal(capture.name, std::string("from-env"), "environment should win over config for arguments");
-    expect_equal(capture.language, std::string("ts"), "environment should win over config for options");
-    expect_equal(capture.jobs, 7.0, "environment numeric value should be parsed");
+    expect_equal(result.exit_code, 1, "unsupported extension exit code");
+    expect_contains(result.err, "Unsupported config file extension", "unsupported extension message");
+}
+
+void test_config_extension_order_is_respected_for_extensionless_paths() {
+    TempDirectory temp_directory;
+    const auto config_stem = temp_directory.path() / "ordered-config";
+    const auto json_path = config_stem.string() + ".json";
+    const auto toml_path = config_stem.string() + ".toml";
+
+    {
+        std::ofstream stream(json_path);
+        stream << "{\n";
+        stream << "  \"project\": {\n";
+        stream << "    \"create\": {\n";
+        stream << "      \"name\": \"from-json\"\n";
+        stream << "    }\n";
+        stream << "  }\n";
+        stream << "}\n";
+    }
+    {
+        std::ofstream stream(toml_path);
+        stream << "[project.create]\n";
+        stream << "name = \"from-toml\"\n";
+    }
+
+    DemoCapture capture;
+    auto cli = make_demo_cli(capture);
+    auto settings = make_demo_config_settings();
+    settings.allowed_extensions = {".json", ".toml"};
+
+    cli = std::make_unique<clix::CLI>("demo", "1.2.3");
+    cli->description("Integration fixture used by the test suite.");
+    cli->enable_completion();
+    cli->enable_config_files(settings);
+
+    auto& project = cli->command("project").description("Project lifecycle commands.");
+    auto& create = project.command("create").description("Create a project from a starter template.");
+    auto name_argument = make_argument_config(clix::ValueKind::string, "Project name.", "name");
+    create.argument("name", std::move(name_argument));
+    create.action([&capture](const clix::Invocation& invocation) {
+        capture.name = invocation.argument<std::string>("name");
+    });
+
+    const auto result = run_cli(*cli, {"project", "create", "--config", config_stem.string()});
+    expect_equal(result.exit_code, 0, "extension order exit code");
+    expect_equal(capture.name, std::string("from-json"), "allowed_extensions should control probing order");
 }
 
 void test_end_of_flags_marker_requires_following_values() {
@@ -742,7 +933,12 @@ int main() {
         {"option_groups_appear_in_help_output", test_option_groups_appear_in_help_output},
         {"path_completion_suggests_filesystem_entries", test_path_completion_suggests_filesystem_entries},
         {"global_options_before_subcommand_are_supported", test_global_options_before_subcommand_are_supported},
-        {"environment_values_have_higher_precedence_than_config", test_environment_values_have_higher_precedence_than_config},
+        {"config_values_have_higher_precedence_than_environment", test_config_values_have_higher_precedence_than_environment},
+        {"config_path_can_come_from_environment_or_default_filename", test_config_path_can_come_from_environment_or_default_filename},
+        {"custom_environment_reader_supplies_declared_values", test_custom_environment_reader_supplies_declared_values},
+        {"process_environment_is_used_even_with_custom_reader", test_process_environment_is_used_even_with_custom_reader},
+        {"unsupported_config_extensions_are_rejected", test_unsupported_config_extensions_are_rejected},
+        {"config_extension_order_is_respected_for_extensionless_paths", test_config_extension_order_is_respected_for_extensionless_paths},
         {"end_of_flags_marker_requires_following_values", test_end_of_flags_marker_requires_following_values},
         {"short_option_groups_support_inline_value_suffixes", test_short_option_groups_support_inline_value_suffixes},
         {"requires_excludes_and_exclusive_groups_are_enforced", test_requires_excludes_and_exclusive_groups_are_enforced},

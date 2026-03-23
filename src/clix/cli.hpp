@@ -3,12 +3,15 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <ostream>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -56,6 +59,14 @@ inline std::string render_template(
     return value;
 }
 
+inline std::optional<std::string> read_process_environment(std::string_view name) {
+    const auto* value = std::getenv(std::string(name).c_str());
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    return std::string(value);
+}
+
 }  // namespace detail
 
 /**
@@ -66,6 +77,8 @@ inline std::string render_template(
  */
 class CLI : public Command {
 public:
+    using EnvironmentReader = std::function<std::optional<std::string>(std::string_view)>;
+
     explicit CLI(std::string name = {}, std::string version = "0.1.0")
         : Command(std::move(name))
         , version_(std::move(version)) {}
@@ -84,7 +97,13 @@ public:
         config_option.aliases = config_settings_.aliases;
         config_option.description = config_settings_.description;
         config_option.value_label = "path";
+        config_option.environment_variables = config_settings_.environment_variables;
         option(config_settings_.option_name, std::move(config_option));
+        return *this;
+    }
+
+    CLI& environment_reader(EnvironmentReader reader) {
+        environment_reader_ = std::move(reader);
         return *this;
     }
 
@@ -275,11 +294,19 @@ complete -c {{EXECUTABLE}} -f -a '({{FUNCTION}})'
             auto passthrough_arguments = std::vector<std::string>{};
 
             parse_active_command_tokens(state, tokens, arguments, options, passthrough_arguments);
+            const auto command_line_arguments = collect_keys(arguments);
+            const auto command_line_options = collect_keys(options);
 
             apply_environment_values(*state.active, arguments, options);
 
             if (config_document.has_value()) {
-                apply_config_values(*state.active, state.command_path, *config_document, arguments, options);
+                apply_config_values(*state.active,
+                                    state.command_path,
+                                    *config_document,
+                                    arguments,
+                                    options,
+                                    command_line_arguments,
+                                    command_line_options);
             }
 
             finalize_values(*state.active, arguments, options);
@@ -757,12 +784,12 @@ private:
             }
 
             for (const auto& variable_name : argument_config.environment_variables) {
-                const auto* value = std::getenv(variable_name.c_str());
-                if (value == nullptr || detail::trim_copy(value).empty()) {
+                const auto value = read_environment(variable_name);
+                if (!value.has_value() || detail::trim_copy(*value).empty()) {
                     continue;
                 }
 
-                arguments.emplace(argument_name, command.parse_argument_value(argument_name, value));
+                arguments.emplace(argument_name, command.parse_argument_value(argument_name, *value));
                 break;
             }
         }
@@ -776,12 +803,12 @@ private:
             }
 
             for (const auto& variable_name : option_config.environment_variables) {
-                const auto* value = std::getenv(variable_name.c_str());
-                if (value == nullptr || detail::trim_copy(value).empty()) {
+                const auto value = read_environment(variable_name);
+                if (!value.has_value() || detail::trim_copy(*value).empty()) {
                     continue;
                 }
 
-                options.emplace(option_name, command.parse_option_value(option_name, value));
+                options.emplace(option_name, command.parse_option_value(option_name, *value));
                 break;
             }
         }
@@ -921,21 +948,21 @@ private:
             return std::nullopt;
         }
 
-        const auto value = extract_special_option_value(tokens,
-                                                        config_settings_.option_name,
-                                                        config_settings_.aliases);
+        const auto value = resolve_config_path(tokens);
         if (!value.has_value()) {
             return std::nullopt;
         }
 
-        return ConfigDocument::parse_file(Path(*value));
+        return ConfigDocument::parse_file(Path(*value), config_settings_);
     }
 
     void apply_config_values(const Command& command,
                              const std::vector<std::string>& command_path,
                              const ConfigDocument& document,
                              ArgumentsMap& arguments,
-                             OptionsMap& options) const {
+                             OptionsMap& options,
+                             const std::unordered_set<std::string>& protected_arguments,
+                             const std::unordered_set<std::string>& protected_options) const {
         std::unordered_map<std::string, std::string> merged_values;
 
         for (const auto& section : document.resolve_command_sections(command_path)) {
@@ -961,25 +988,27 @@ private:
         }
 
         for (const auto& [argument_name, _] : command.arguments_definitions()) {
-            if (detail::contains_key(arguments, argument_name)) {
+            if (detail::contains_key(protected_arguments, argument_name)) {
                 continue;
             }
 
             const auto iterator = merged_values.find(argument_name);
             if (iterator != merged_values.end()) {
-                arguments.emplace(argument_name, command.parse_argument_value(argument_name, iterator->second));
+                arguments.insert_or_assign(argument_name,
+                                           command.parse_argument_value(argument_name, iterator->second));
             }
         }
 
         for (const auto& option : command.visible_options()) {
             const auto& option_name = option.name;
-            if (detail::contains_key(options, option_name)) {
+            if (detail::contains_key(protected_options, option_name)) {
                 continue;
             }
 
             const auto iterator = merged_values.find(option_name);
             if (iterator != merged_values.end()) {
-                options.emplace(option_name, command.parse_option_value(option_name, iterator->second));
+                options.insert_or_assign(option_name,
+                                         command.parse_option_value(option_name, iterator->second));
             }
         }
     }
@@ -1051,9 +1080,102 @@ private:
         return value;
     }
 
+    [[nodiscard]] std::optional<std::string> resolve_config_path(std::vector<std::string>& tokens) const {
+        if (const auto explicit_value =
+                extract_special_option_value(tokens, config_settings_.option_name, config_settings_.aliases);
+            explicit_value.has_value()) {
+            return resolve_config_candidate_path(*explicit_value, true);
+        }
+
+        for (const auto& variable_name : config_settings_.environment_variables) {
+            const auto value = read_environment(variable_name);
+            if (!value.has_value() || detail::trim_copy(*value).empty()) {
+                continue;
+            }
+            return resolve_config_candidate_path(*value, true);
+        }
+
+        for (const auto& filename : config_settings_.default_filenames) {
+            if (const auto value = resolve_config_candidate_path(filename, false); value.has_value()) {
+                return value;
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::string> resolve_config_candidate_path(std::string_view candidate,
+                                                                           bool required) const {
+        const auto trimmed = detail::trim_copy(candidate);
+        if (trimmed.empty()) {
+            return std::nullopt;
+        }
+
+        const auto raw_path = std::filesystem::path(trimmed);
+        auto probes = std::vector<std::filesystem::path>{};
+
+        if (raw_path.extension().empty()) {
+            for (const auto& extension : config_settings_.allowed_extensions) {
+                auto probe = raw_path;
+                probe += normalize_config_extension(extension);
+                probes.push_back(std::move(probe));
+            }
+        } else {
+            probes.push_back(raw_path);
+        }
+
+        for (const auto& probe : probes) {
+            std::error_code error;
+            if (std::filesystem::exists(probe, error) && !error) {
+                return probe.string();
+            }
+        }
+
+        if (!required) {
+            return std::nullopt;
+        }
+
+        if (!raw_path.extension().empty()) {
+            return raw_path.string();
+        }
+
+        if (!probes.empty()) {
+            return probes.front().string();
+        }
+
+        return raw_path.string();
+    }
+
+    [[nodiscard]] static std::string normalize_config_extension(std::string_view extension) {
+        if (extension.empty()) {
+            return {};
+        }
+        return extension.front() == '.' ? std::string(extension) : "." + std::string(extension);
+    }
+
+    [[nodiscard]] std::optional<std::string> read_environment(std::string_view name) const {
+        if (environment_reader_) {
+            if (const auto custom_value = environment_reader_(name); custom_value.has_value()) {
+                return custom_value;
+            }
+        }
+        return detail::read_process_environment(name);
+    }
+
+    template <typename Map>
+    [[nodiscard]] static std::unordered_set<std::string> collect_keys(const Map& map) {
+        std::unordered_set<std::string> keys;
+        keys.reserve(map.size());
+        for (const auto& entry : map) {
+            keys.insert(entry.first);
+        }
+        return keys;
+    }
+
     std::string version_;
     ConfigFileSettings config_settings_;
     CompletionSettings completion_settings_;
+    EnvironmentReader environment_reader_;
 };
 
 }  // namespace clix

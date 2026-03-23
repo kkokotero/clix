@@ -1,0 +1,54 @@
+name: Feature Request
+description: Suggest an improvement to the CLIX API, behavior, documentation, or developer experience.
+title: "[feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for sharing an idea for CLIX.
+
+        The best requests describe the real problem first, then propose a solution.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What is hard, missing, confusing, or repetitive today?
+      placeholder: I need to share common options across many commands without repeating setup code.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the API or behavior you would like to see.
+      placeholder: Add a lightweight way to compose reusable option bundles.
+    validations:
+      required: true
+  - type: textarea
+    id: api_sketch
+    attributes:
+      label: API sketch
+      description: Optional, but very helpful for design discussions.
+      render: cpp
+  - type: dropdown
+    id: breaking_change
+    attributes:
+      label: Could this be a breaking change?
+      options:
+        - No
+        - Yes
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or alternative designs did you consider?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add links, examples from other libraries, or project-specific constraints.

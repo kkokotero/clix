@@ -1,0 +1,91 @@
+name: Bug Report
+description: Report a reproducible bug or regression in CLIX.
+title: "[bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve CLIX.
+
+        Please include a small reproduction whenever possible. Reproducible reports are the fastest to fix.
+  - type: input
+    id: version
+    attributes:
+      label: CLIX version
+      description: Which released version, commit hash, or local revision are you using?
+      placeholder: v0.1.0 or 51217cd
+    validations:
+      required: true
+  - type: dropdown
+    id: compiler
+    attributes:
+      label: Compiler
+      description: Which compiler are you using?
+      options:
+        - GCC
+        - Clang
+        - MSVC
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: compiler_version
+    attributes:
+      label: Compiler version
+      placeholder: gcc 14.2, clang 18, MSVC 19.42
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Ubuntu 24.04, macOS 15, Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly and concisely.
+      placeholder: CLIX accepts an invalid option group and never reports an error.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest set of steps to reproduce the issue.
+      placeholder: |
+        1. Configure a command with ...
+        2. Run `app --...`
+        3. Observe ...
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal code sample or CLI invocation
+      description: Paste a focused snippet, command, or test case.
+      render: cpp
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: CLIX should reject the invalid input and return exit code 1.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: CLIX silently accepts the input and continues execution.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or extra context
+      description: Include error output, backtraces, screenshots, or related notes if helpful.

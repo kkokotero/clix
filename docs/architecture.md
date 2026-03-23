@@ -7,7 +7,7 @@ The same command model drives:
 - parsing
 - validation
 - help output
-- config file loading
+- JSON/TOML config file loading
 - environment-variable resolution
 - shell completion
 
@@ -46,9 +46,17 @@ This makes `clix` a schema-driven CLI runtime rather than a plain option parser.
 At runtime `clix` resolves values in this order:
 
 1. command line
-2. environment variables
-3. config file
+2. config file
+3. environment variables
 4. default values
+
+Config files themselves are discovered in this order:
+
+1. explicit `--config`
+2. configured config-path environment variables
+3. configured default filenames
+
+If a configured path is extensionless, `clix` probes the configured allowed extensions in order.
 
 After values are resolved, validators and option relationships are enforced.
 
