@@ -3,6 +3,7 @@
 #include <cmath>
 #include <functional>
 #include <optional>
+#include <regex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -50,6 +51,72 @@ inline void apply_validators(const std::vector<ValidatorSpec>& validators,
 
 namespace validators {
 
+inline ValidatorSpec all_of(std::vector<ValidatorSpec> validators,
+                            std::string name = "all_of") {
+    return ValidatorSpec{
+        std::move(name),
+        [validators = std::move(validators)](const CliValue& value,
+                                             const ValidatorContext& context) -> std::optional<std::string> {
+            for (const auto& validator : validators) {
+                if (!validator.validate) {
+                    continue;
+                }
+
+                if (const auto result = validator.validate(value, context); result.has_value()) {
+                    return result;
+                }
+            }
+            return std::nullopt;
+        }};
+}
+
+inline ValidatorSpec any_of(std::vector<ValidatorSpec> validators,
+                            std::string name = "any_of") {
+    return ValidatorSpec{
+        std::move(name),
+        [validators = std::move(validators)](const CliValue& value,
+                                             const ValidatorContext& context) -> std::optional<std::string> {
+            std::vector<std::string> failures;
+            for (const auto& validator : validators) {
+                if (!validator.validate) {
+                    continue;
+                }
+
+                if (const auto result = validator.validate(value, context); !result.has_value()) {
+                    return std::nullopt;
+                } else {
+                    failures.push_back(*result);
+                }
+            }
+
+            if (failures.empty()) {
+                return std::nullopt;
+            }
+
+            return "Value must satisfy at least one validator: " + detail::join_strings(failures, " | ");
+        }};
+}
+
+inline ValidatorSpec none_of(std::vector<ValidatorSpec> validators,
+                             std::string name = "none_of") {
+    return ValidatorSpec{
+        std::move(name),
+        [validators = std::move(validators)](const CliValue& value,
+                                             const ValidatorContext& context) -> std::optional<std::string> {
+            for (const auto& validator : validators) {
+                if (!validator.validate) {
+                    continue;
+                }
+
+                if (const auto result = validator.validate(value, context); !result.has_value()) {
+                    return "Value matched a forbidden validator" +
+                           (validator.name.empty() ? std::string(".") : ": " + validator.name + ".");
+                }
+            }
+            return std::nullopt;
+        }};
+}
+
 inline ValidatorSpec non_empty_string(std::string name = "non_empty_string") {
     return ValidatorSpec{
         std::move(name),
@@ -95,6 +162,38 @@ inline ValidatorSpec positive_number(std::string name = "positive_number") {
             if (const auto* number = std::get_if<double>(&value); number != nullptr) {
                 if (!std::isfinite(*number) || *number <= 0.0) {
                     return "Value must be a positive finite number.";
+                }
+            }
+            return std::nullopt;
+        }};
+}
+
+inline ValidatorSpec matches(std::string pattern,
+                             std::string name = "matches") {
+    return ValidatorSpec{
+        std::move(name),
+        [regex = std::regex(std::move(pattern))](const CliValue& value,
+                                                 const ValidatorContext&) -> std::optional<std::string> {
+            if (const auto* string = std::get_if<std::string>(&value); string != nullptr &&
+                !std::regex_match(*string, regex)) {
+                return "Value does not match the required pattern.";
+            }
+            return std::nullopt;
+        }};
+}
+
+inline ValidatorSpec length(std::size_t minimum,
+                            std::optional<std::size_t> maximum = std::nullopt,
+                            std::string name = "length") {
+    return ValidatorSpec{
+        std::move(name),
+        [minimum, maximum](const CliValue& value, const ValidatorContext&) -> std::optional<std::string> {
+            if (const auto* string = std::get_if<std::string>(&value); string != nullptr) {
+                if (string->size() < minimum) {
+                    return "Value length must be at least " + std::to_string(minimum) + ".";
+                }
+                if (maximum.has_value() && string->size() > *maximum) {
+                    return "Value length must be at most " + std::to_string(*maximum) + ".";
                 }
             }
             return std::nullopt;

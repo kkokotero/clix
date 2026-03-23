@@ -6,7 +6,7 @@
 #include <clix/validators.hpp>
 
 int main(int argc, char** argv) {
-    clix::CLI cli("hello", "0.1.0");
+    clix::CLI cli("hello", "0.2.0");
     cli.description("Simple greeting example built with clix.");
     cli.enable_completion();
 

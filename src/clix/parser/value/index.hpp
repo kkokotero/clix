@@ -29,6 +29,8 @@ inline CliValue parse_value(ValueKind kind,
             return parse_choice(value, choices);
         case ValueKind::path:
             return Path::parse(value);
+        case ValueKind::url:
+            return Url::parse(value);
         case ValueKind::time:
             return Time::parse(value);
         case ValueKind::size:
@@ -55,6 +57,13 @@ inline CliValue parse_value(ValueKind kind,
             std::vector<Path> values;
             for (const auto& item : parse_list(value)) {
                 values.push_back(Path::parse(item));
+            }
+            return values;
+        }
+        case ValueKind::url_array: {
+            std::vector<Url> values;
+            for (const auto& item : parse_list(value)) {
+                values.push_back(Url::parse(item));
             }
             return values;
         }

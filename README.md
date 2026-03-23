@@ -2,7 +2,7 @@
 
 ![CLIX Logo](./docs/banner.png)
 
-`CLIX` is a header-only C++ CLI library for building command-line applications with a fluent API, nested subcommands, validators, config files, environment-variable support, and shell completion.
+`CLIX` is a header-only C++ CLI library for building command-line applications with a fluent API, nested subcommands, typed values, validators, config files, environment-variable support, deprecation metadata, documentation export, and shell completion.
 
 ## Why CLIX Exists
 
@@ -12,14 +12,17 @@ Many existing libraries are strong at parsing flags, but once you also need:
 
 - nested command trees
 - readable help
+- typed values
 - validation
 - environment-variable fallbacks
 - config-backed values
+- deprecation handling
+- documentation export
 - shell completion
 
 you often end up stitching several ideas together by hand.
 
-`CLIX` takes a schema-driven approach instead: define the command model once, then reuse that same metadata for parsing, validation, help output, config loading, environment resolution, and completion.
+`CLIX` takes a schema-driven approach instead: define the command model once, then reuse that same metadata for parsing, validation, help output, config loading, environment resolution, deprecation warnings, completion, and generated documentation.
 
 The project also keeps a few strong constraints on purpose:
 
@@ -37,7 +40,13 @@ The project also keeps a few strong constraints on purpose:
 - Modular public includes through `<clix/...>`
 - Fluent builders for arguments and options
 - Optional routers for modular command registration in large projects
+- Reusable command bundles through `command.use(...)`
 - Nested subcommands with inherited global options
+- Built-in `URL`, `Path`, `Time`, `Size`, JSON, and array value kinds
+- Typed custom parsers through `parse_as<T>(...)`
+- Value-source tracking through `Invocation::argument_source(...)` and `Invocation::option_source(...)`
+- Deprecation metadata for commands, options, and aliases
+- Schema and Markdown export from the same command model
 - Validators, config files, environment variables, and shell completion driven by the same command schema
 - Readable error messages with hints for invalid input
 
@@ -146,6 +155,9 @@ The same declared schema drives:
 - validation
 - config loading
 - environment-variable resolution
+- deprecation warnings
+- schema export
+- Markdown export
 - shell completion
 
 ## Fluent API
@@ -178,11 +190,15 @@ Available builder features include:
 - `complete(...)`
 - `validate(...)`
 - `alias(...)`
+- `deprecated(...)`
+- `deprecated_alias(...)`
+- `parse_as<T>(...)`
 - `group(...)`
 - `requires(...)`
 - `excludes(...)`
 - `exclusive_group(...)`
 - `hidden()`
+- `use(...)`
 
 ## Supported Value Types
 
@@ -195,6 +211,7 @@ Available builder features include:
 | `ValueKind::number` | `double` | numeric parameters |
 | `ValueKind::choice` | `std::string` | enumerated string values |
 | `ValueKind::path` | `clix::Path` | files and directories |
+| `ValueKind::url` | `clix::Url` | absolute URLs such as `https://example.com` |
 | `ValueKind::time` | `clix::Time` | durations / time-like values |
 | `ValueKind::size` | `clix::Size` | memory / byte-size values |
 | `ValueKind::json` | `clix::JsonObject` | structured JSON payloads |
@@ -202,6 +219,7 @@ Available builder features include:
 | `ValueKind::string_array` | `std::vector<std::string>` | repeated strings |
 | `ValueKind::number_array` | `std::vector<double>` | repeated numbers |
 | `ValueKind::path_array` | `std::vector<clix::Path>` | repeated paths |
+| `ValueKind::url_array` | `std::vector<clix::Url>` | repeated URLs |
 | `ValueKind::time_array` | `std::vector<clix::Time>` | repeated durations |
 | `ValueKind::size_array` | `std::vector<clix::Size>` | repeated sizes |
 
@@ -212,8 +230,57 @@ command.opt("verbose");  // boolean
 command.opt("jobs", clix::ValueKind::number);  // double
 command.opt("format", clix::ValueKind::choice).choices({"json", "yaml"});
 command.arg("manifest", clix::ValueKind::path);
+command.arg("endpoint", clix::ValueKind::url);
 command.opt("tag", clix::ValueKind::string_array);
 ```
+
+## Custom Typed Parsers
+
+When the built-in value kinds are not enough, `CLIX` can parse directly into your own runtime types.
+
+```cpp
+struct SemanticVersion {
+    int major = 0;
+    int minor = 0;
+    int patch = 0;
+};
+
+command.arg("version")
+    .parse_as<SemanticVersion>(
+        [](std::string_view raw) {
+            // parse "1.2.3"
+            return SemanticVersion{/* ... */};
+        },
+        "semver",
+        [](const SemanticVersion& value) {
+            return std::to_string(value.major) + "." +
+                   std::to_string(value.minor) + "." +
+                   std::to_string(value.patch);
+        });
+```
+
+Handlers can then read the typed value directly:
+
+```cpp
+auto version = invocation.argument<SemanticVersion>("version");
+```
+
+## Value Sources
+
+Invocations track where each resolved value came from:
+
+- command line
+- config file
+- environment variables
+- default values
+
+```cpp
+auto version_source = invocation.argument_source("version");
+auto profile_source = invocation.option_source("profile");
+auto format_source = invocation.source("format");
+```
+
+This is useful for audit logs, debug output, and advanced UX.
 
 ## Nested Subcommands
 
@@ -244,6 +311,22 @@ app_router.mount(cli);
 
 This keeps command registration modular while preserving the same `Command` builder API inside each module.
 
+## Reusable Bundles
+
+For shared option sets that do not need a full router, you can compose reusable bundles:
+
+```cpp
+auto logging_bundle = [](clix::Command& command) {
+    command.opt("verbose").description("Enable verbose output.");
+    command.opt("json").description("Render JSON output.");
+};
+
+cli.command("build").use(logging_bundle);
+cli.command("test").use(logging_bundle);
+```
+
+This keeps large CLIs DRY without introducing another abstraction layer.
+
 ## Validators
 
 Built-in validators include:
@@ -252,6 +335,11 @@ Built-in validators include:
 - `clix::validators::number_range(min, max)`
 - `clix::validators::positive_number()`
 - `clix::validators::existing_path()`
+- `clix::validators::matches(regex)`
+- `clix::validators::length(min, max)`
+- `clix::validators::all_of({...})`
+- `clix::validators::any_of({...})`
+- `clix::validators::none_of({...})`
 
 Custom validators are regular callables that return `std::optional<std::string>`.
 
@@ -271,6 +359,27 @@ This covers:
 - required companion options
 - conflicting options
 - mutually exclusive sets
+
+## Deprecations
+
+Commands, options, and aliases can carry deprecation metadata without breaking compatibility immediately.
+
+```cpp
+auto& deploy = cli.command("deploy")
+                   .deprecated("Use `release deploy` instead.")
+                   .deprecated_alias("ship", "Use `deploy` instead.");
+
+deploy.opt("token", clix::ValueKind::string)
+    .deprecated("Use `api-token` instead.")
+    .deprecated_alias("t", "Use `--token` instead.");
+```
+
+That metadata is reused across:
+
+- runtime warnings
+- help output
+- generated schema
+- generated Markdown docs
 
 ## Environment Variables
 
@@ -381,6 +490,23 @@ tag = ["core", "cli"]
 ```
 
 Strict mode is enabled by default, so unknown config keys fail fast.
+
+## Generated Schema And Markdown
+
+Because `CLIX` keeps a structured command model at runtime, the same schema can be exported for tooling and docs:
+
+```cpp
+auto json_schema = cli.schema_json();
+auto markdown = cli.markdown();
+std::ofstream("cli-reference.md") << markdown;
+```
+
+This is especially useful for:
+
+- generating reference docs
+- snapshot-testing command surfaces
+- feeding external tooling such as wrappers or dashboards
+- keeping deprecations, aliases, and value types documented automatically
 
 ## Passthrough
 
@@ -497,6 +623,13 @@ The test suite covers:
 - requires and excludes
 - child overrides over parent options
 - completion suggestions and script generation
+- URL parsing
+- custom typed parsers
+- invocation value-source tracking
+- validator composition helpers
+- reusable command bundles
+- command, option, and alias deprecations
+- schema and Markdown export
 
 Run it with:
 

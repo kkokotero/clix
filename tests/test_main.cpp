@@ -46,6 +46,20 @@ struct DemoCapture {
     std::vector<std::string> passthrough;
 };
 
+struct SemanticVersion {
+    int major = 0;
+    int minor = 0;
+    int patch = 0;
+
+    [[nodiscard]] std::string to_string() const {
+        return std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch);
+    }
+
+    [[nodiscard]] bool operator==(const SemanticVersion& other) const {
+        return major == other.major && minor == other.minor && patch == other.patch;
+    }
+};
+
 class TempDirectory {
 public:
     TempDirectory()
@@ -256,6 +270,27 @@ template <typename T>
 void expect_equal(const T& actual, const T& expected, std::string_view label) {
     if (!(actual == expected)) {
         throw std::runtime_error(std::string(label) + ": values differ");
+    }
+}
+
+[[nodiscard]] SemanticVersion parse_semantic_version(std::string_view raw) {
+    const auto parts = clix::detail::split(raw, '.');
+    if (parts.size() != 3) {
+        throw clix::ParsingError(
+            "Invalid semantic version",
+            clix::ParsingErrorOptions{{}, {std::string(raw)}, {"1.2.3"}, "Use the MAJOR.MINOR.PATCH format."});
+    }
+
+    try {
+        return SemanticVersion{
+            std::stoi(parts[0]),
+            std::stoi(parts[1]),
+            std::stoi(parts[2]),
+        };
+    } catch (const std::exception&) {
+        throw clix::ParsingError(
+            "Invalid semantic version",
+            clix::ParsingErrorOptions{{}, {std::string(raw)}, {"1.2.3"}, "Use numeric semantic version segments."});
     }
 }
 
@@ -915,6 +950,181 @@ void test_router_reuses_existing_paths_and_rejects_invalid_routes() {
     expect(threw, "router should reject invalid empty path segments");
 }
 
+void test_url_value_kind_parses_absolute_urls() {
+    clix::Url captured("https://placeholder.dev");
+
+    clix::CLI cli("fetch");
+    auto& get = cli.command("get").description("Fetch a remote resource.");
+    get.arg("endpoint", clix::ValueKind::url).description("Absolute endpoint URL.");
+    get.action([&](const clix::Invocation& invocation) {
+        captured = invocation.argument<clix::Url>("endpoint");
+    });
+
+    const auto ok = run_cli(cli, {"get", "https://example.com/api/items?id=42#top"});
+    expect_equal(ok.exit_code, 0, "url parse exit code");
+    expect_equal(captured.scheme(), std::string("https"), "url scheme");
+    expect_equal(captured.authority(), std::string("example.com"), "url authority");
+    expect_equal(captured.path(), std::string("/api/items"), "url path");
+    expect_equal(captured.query(), std::string("id=42"), "url query");
+    expect_equal(captured.fragment(), std::string("top"), "url fragment");
+
+    const auto invalid = run_cli(cli, {"get", "example.com/no-scheme"});
+    expect_equal(invalid.exit_code, 1, "invalid url exit code");
+    expect_contains(invalid.err, "URL is missing a scheme", "invalid url error");
+}
+
+void test_custom_typed_parsers_and_value_sources_are_available_in_invocations() {
+    TempDirectory temp_directory;
+    const auto config_path = temp_directory.path() / "source-demo.toml";
+
+    {
+        std::ofstream stream(config_path);
+        stream << "[release.publish]\n";
+        stream << "profile = \"release\"\n";
+    }
+
+    ScopedEnvVar config_env("RELEASE_CONFIG", config_path.string());
+    ScopedEnvVar target_env("RELEASE_TARGET", "linux-arm64");
+
+    SemanticVersion version;
+    clix::ValueSource version_source = clix::ValueSource::default_value;
+    clix::ValueSource target_source = clix::ValueSource::default_value;
+    clix::ValueSource profile_source = clix::ValueSource::default_value;
+    clix::ValueSource format_source = clix::ValueSource::default_value;
+
+    clix::ConfigFileSettings settings;
+    settings.environment_variables = {"RELEASE_CONFIG"};
+
+    clix::CLI cli("release-cli");
+    cli.enable_config_files(settings);
+
+    auto& release = cli.command("release").description("Release workflows.");
+    auto& publish = release.command("publish").description("Publish a release.");
+    publish.arg("version")
+        .description("Release semantic version.")
+        .parse_as<SemanticVersion>(
+            [](std::string_view raw) { return parse_semantic_version(raw); },
+            "semver",
+            [](const SemanticVersion& value) { return value.to_string(); });
+    publish.opt("target", clix::ValueKind::string)
+        .description("Deployment target.")
+        .env("RELEASE_TARGET");
+    publish.opt("profile", clix::ValueKind::string)
+        .description("Release profile.");
+    publish.opt("format", clix::ValueKind::string)
+        .description("Output format.")
+        .default_value(clix::CliValue(std::string("text")));
+    publish.action([&](const clix::Invocation& invocation) {
+        version = invocation.argument<SemanticVersion>("version");
+        version_source = invocation.argument_source("version");
+        target_source = invocation.option_source("target");
+        profile_source = invocation.option_source("profile");
+        format_source = invocation.source("format");
+    });
+
+    const auto result = run_cli(cli, {"release", "publish", "2.4.6"});
+    expect_equal(result.exit_code, 0, "custom parser exit code");
+    expect_equal(version, SemanticVersion{2, 4, 6}, "custom parsed semantic version");
+    expect_equal(version_source, clix::ValueSource::command_line, "argument source should be command line");
+    expect_equal(target_source, clix::ValueSource::environment, "option source should be environment");
+    expect_equal(profile_source, clix::ValueSource::config_file, "option source should be config");
+    expect_equal(format_source, clix::ValueSource::default_value, "default option source");
+}
+
+void test_validator_composition_helpers_cover_common_constraints() {
+    clix::CLI cli("validate");
+    auto& run = cli.command("run").description("Validate composed validators.");
+    run.arg("name")
+        .validate(clix::validators::all_of(
+            {clix::validators::non_empty_string(),
+             clix::validators::length(3, 8),
+             clix::validators::matches("^[a-z]+$")}))
+        .description("Lowercase project name.");
+    run.opt("mode", clix::ValueKind::string)
+        .choices({"dev", "prod"})
+        .validate(clix::validators::any_of(
+            {clix::validators::matches("^dev$"), clix::validators::matches("^prod$")}));
+    run.opt("reserved", clix::ValueKind::string)
+        .validate(clix::validators::none_of(
+            {clix::validators::matches("^root$"), clix::validators::matches("^admin$")}));
+    run.action([](const clix::Invocation&) {});
+
+    const auto invalid_name = run_cli(cli, {"run", "Ab", "--mode", "dev", "--reserved", "guest"});
+    expect_equal(invalid_name.exit_code, 1, "composed validator invalid-name exit code");
+    expect_contains(invalid_name.err, "Validation failed", "composed validator failure");
+
+    const auto invalid_reserved = run_cli(cli, {"run", "widget", "--mode", "prod", "--reserved", "root"});
+    expect_equal(invalid_reserved.exit_code, 1, "composed validator invalid-reserved exit code");
+    expect_contains(invalid_reserved.err, "none_of", "none_of validator name");
+
+    const auto ok = run_cli(cli, {"run", "widget", "--mode", "dev", "--reserved", "guest"});
+    expect_equal(ok.exit_code, 0, "composed validator success exit code");
+}
+
+void test_command_bundles_improve_reuse_without_duplicating_schema() {
+    bool verbose = false;
+    bool json = false;
+
+    auto logging_bundle = [](clix::Command& command) {
+        command.opt("verbose").alias("L").description("Enable verbose output.");
+        command.opt("json").description("Render machine-readable JSON.");
+    };
+
+    clix::CLI cli("bundle");
+    auto& run = cli.command("run").description("Run the task.").use(logging_bundle);
+    run.action([&](const clix::Invocation& invocation) {
+        verbose = invocation.option<bool>("verbose");
+        json = invocation.option<bool>("json");
+    });
+
+    const auto result = run_cli(cli, {"run", "-L", "--json"});
+    expect_equal(result.exit_code, 0, "bundle exit code");
+    expect(verbose, "bundle should expose verbose option");
+    expect(json, "bundle should expose json option");
+}
+
+void test_deprecated_commands_options_schema_and_markdown_are_exposed() {
+    bool invoked = false;
+
+    clix::CLI cli("legacy");
+    auto& deploy = cli.command("deploy")
+                       .description("Deploy the service.")
+                       .deprecated("Use `release deploy` instead.")
+                       .alias("push")
+                       .deprecated_alias("ship", "Use `deploy` instead.");
+    deploy.opt("token", clix::ValueKind::string)
+        .description("Authentication token.")
+        .deprecated("Use `api-token` instead.")
+        .deprecated_alias("t", "Use `--token` instead.");
+    deploy.action([&](const clix::Invocation&) {
+        invoked = true;
+    });
+
+    const auto result = run_cli(cli, {"ship", "-t", "secret"});
+    expect_equal(result.exit_code, 0, "deprecated command exit code");
+    expect(invoked, "deprecated command should still run");
+    expect_contains(result.err, "Deprecated command alias `ship`", "deprecated command alias warning");
+    expect_contains(result.err, "Deprecated command `legacy deploy`", "deprecated command warning");
+    expect_contains(result.err, "Deprecated option `--token`", "deprecated option warning");
+    expect_contains(result.err, "Deprecated option alias `-t`", "deprecated option alias warning");
+
+    const auto help_result = run_cli(cli, {"deploy", "--help"});
+    expect_equal(help_result.exit_code, 0, "deprecated help exit code");
+    expect_contains(help_result.out, "Deprecated: Use `release deploy` instead.", "help deprecated command");
+    expect_contains(help_result.out, "deprecated aliases", "help deprecated aliases");
+
+    const auto schema = cli.schema_json();
+    expect_contains(schema, "\"deprecated\": true", "schema deprecated flag");
+    expect_contains(schema, "\"deprecated_message\": \"Use `release deploy` instead.\"", "schema deprecated message");
+    expect_contains(schema, "\"deprecated_aliases\": {\"ship\": \"Use `deploy` instead.\"}", "schema deprecated alias");
+
+    const auto markdown = cli.markdown();
+    expect_contains(markdown, "# legacy", "markdown root heading");
+    expect_contains(markdown, "## legacy deploy", "markdown child heading");
+    expect_contains(markdown, "**Deprecated**", "markdown deprecated bullet");
+    expect_contains(markdown, "Deprecated aliases", "markdown deprecated aliases");
+}
+
 }  // namespace
 
 int main() {
@@ -947,6 +1157,15 @@ int main() {
         {"child_commands_override_parent_option_definitions", test_child_commands_override_parent_option_definitions},
         {"router_mounts_modular_command_trees", test_router_mounts_modular_command_trees},
         {"router_reuses_existing_paths_and_rejects_invalid_routes", test_router_reuses_existing_paths_and_rejects_invalid_routes},
+        {"url_value_kind_parses_absolute_urls", test_url_value_kind_parses_absolute_urls},
+        {"custom_typed_parsers_and_value_sources_are_available_in_invocations",
+         test_custom_typed_parsers_and_value_sources_are_available_in_invocations},
+        {"validator_composition_helpers_cover_common_constraints",
+         test_validator_composition_helpers_cover_common_constraints},
+        {"command_bundles_improve_reuse_without_duplicating_schema",
+         test_command_bundles_improve_reuse_without_duplicating_schema},
+        {"deprecated_commands_options_schema_and_markdown_are_exposed",
+         test_deprecated_commands_options_schema_and_markdown_are_exposed},
     };
 
     std::size_t failures = 0;

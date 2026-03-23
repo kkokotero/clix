@@ -1,11 +1,14 @@
 #pragma once
 
+#include <any>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -23,6 +26,7 @@ enum class ValueKind {
     number,
     choice,
     path,
+    url,
     time,
     size,
     json,
@@ -30,6 +34,7 @@ enum class ValueKind {
     string_array,
     number_array,
     path_array,
+    url_array,
     time_array,
     size_array,
 };
@@ -46,6 +51,8 @@ enum class ValueKind {
             return "choice";
         case ValueKind::path:
             return "path";
+        case ValueKind::url:
+            return "url";
         case ValueKind::time:
             return "time";
         case ValueKind::size:
@@ -60,6 +67,8 @@ enum class ValueKind {
             return "number[]";
         case ValueKind::path_array:
             return "path[]";
+        case ValueKind::url_array:
+            return "url[]";
         case ValueKind::time_array:
             return "time[]";
         case ValueKind::size_array:
@@ -72,6 +81,51 @@ enum class ValueKind {
 struct JsonValue;
 using JsonArray = std::vector<JsonValue>;
 using JsonObject = std::map<std::string, JsonValue>;
+
+/**
+ * Small type-erased wrapper used by `parse_as<T>()` so command handlers can
+ * retrieve custom typed values without forcing them into CLIX-specific kinds.
+ */
+struct TypedValue {
+    using formatter_type = std::function<std::string(const std::any&)>;
+
+    template <typename T>
+    static std::shared_ptr<TypedValue> create(T value, std::string type_name = {}) {
+        auto typed = std::make_shared<TypedValue>();
+        typed->storage = std::move(value);
+        typed->type_name = type_name.empty() ? std::string("custom") : std::move(type_name);
+        return typed;
+    }
+
+    template <typename T, typename Formatter>
+    static std::shared_ptr<TypedValue> create(T value, std::string type_name, Formatter formatter) {
+        auto typed = std::make_shared<TypedValue>();
+        typed->storage = std::move(value);
+        typed->type_name = type_name.empty() ? std::string("custom") : std::move(type_name);
+        typed->formatter = [formatter = std::move(formatter)](const std::any& current) {
+            return formatter(std::any_cast<const std::decay_t<T>&>(current));
+        };
+        return typed;
+    }
+
+    template <typename T>
+    [[nodiscard]] const std::decay_t<T>* get_if() const {
+        return std::any_cast<std::decay_t<T>>(&storage);
+    }
+
+    [[nodiscard]] std::string format() const {
+        if (formatter) {
+            return formatter(storage);
+        }
+        return "<" + type_name + ">";
+    }
+
+    std::any storage;
+    std::string type_name = "custom";
+    formatter_type formatter;
+};
+
+using TypedValuePtr = std::shared_ptr<TypedValue>;
 
 /**
  * Minimal JSON runtime value used by the `json` coercer without bringing an
@@ -159,15 +213,24 @@ using CliValue = std::variant<bool,
                               std::string,
                               double,
                               Path,
+                              Url,
                               Time,
                               Size,
                               JsonObject,
+                              TypedValuePtr,
                               std::vector<bool>,
                               std::vector<std::string>,
                               std::vector<double>,
                               std::vector<Path>,
+                              std::vector<Url>,
                               std::vector<Time>,
                               std::vector<Size>>;
+
+template <typename T, typename Variant>
+struct variant_contains;
+
+template <typename T, typename... Ts>
+struct variant_contains<T, std::variant<Ts...>> : std::disjunction<std::is_same<T, Ts>...> {};
 
 [[nodiscard]] inline bool matches_value_kind(const CliValue& value, ValueKind kind) {
     switch (kind) {
@@ -180,6 +243,8 @@ using CliValue = std::variant<bool,
             return std::holds_alternative<double>(value);
         case ValueKind::path:
             return std::holds_alternative<Path>(value);
+        case ValueKind::url:
+            return std::holds_alternative<Url>(value);
         case ValueKind::time:
             return std::holds_alternative<Time>(value);
         case ValueKind::size:
@@ -194,6 +259,8 @@ using CliValue = std::variant<bool,
             return std::holds_alternative<std::vector<double>>(value);
         case ValueKind::path_array:
             return std::holds_alternative<std::vector<Path>>(value);
+        case ValueKind::url_array:
+            return std::holds_alternative<std::vector<Url>>(value);
         case ValueKind::time_array:
             return std::holds_alternative<std::vector<Time>>(value);
         case ValueKind::size_array:
@@ -215,11 +282,14 @@ using CliValue = std::variant<bool,
             } else if constexpr (std::is_same_v<current_type, double>) {
                 return detail::number_to_string(current);
             } else if constexpr (std::is_same_v<current_type, Path> ||
+                                 std::is_same_v<current_type, Url> ||
                                  std::is_same_v<current_type, Time> ||
                                  std::is_same_v<current_type, Size>) {
                 return current.to_string();
             } else if constexpr (std::is_same_v<current_type, JsonObject>) {
                 return JsonValue(current).dump();
+            } else if constexpr (std::is_same_v<current_type, TypedValuePtr>) {
+                return current == nullptr ? std::string("<custom>") : current->format();
             } else {
                 std::string result = "[";
                 for (std::size_t index = 0; index < current.size(); ++index) {
@@ -242,6 +312,39 @@ using CliValue = std::variant<bool,
             }
         },
         value);
+}
+
+template <typename T>
+[[nodiscard]] inline const std::decay_t<T>& value_cast(const CliValue& value) {
+    using value_type = std::decay_t<T>;
+
+    if constexpr (variant_contains<value_type, CliValue>::value) {
+        if (const auto* direct = std::get_if<value_type>(&value); direct != nullptr) {
+            return *direct;
+        }
+    }
+
+    if (const auto* typed = std::get_if<TypedValuePtr>(&value); typed != nullptr && *typed != nullptr) {
+        if (const auto* custom = (*typed)->template get_if<value_type>(); custom != nullptr) {
+            return *custom;
+        }
+    }
+
+    throw std::bad_variant_access();
+}
+
+[[nodiscard]] inline bool is_typed_value(const CliValue& value) {
+    return std::holds_alternative<TypedValuePtr>(value);
+}
+
+template <typename T>
+[[nodiscard]] inline CliValue make_typed_value(T value, std::string type_name = {}) {
+    return CliValue(TypedValue::create(std::move(value), std::move(type_name)));
+}
+
+template <typename T, typename Formatter>
+[[nodiscard]] inline CliValue make_typed_value(T value, std::string type_name, Formatter formatter) {
+    return CliValue(TypedValue::create(std::move(value), std::move(type_name), std::move(formatter)));
 }
 
 }  // namespace clix

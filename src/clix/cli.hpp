@@ -79,7 +79,7 @@ class CLI : public Command {
 public:
     using EnvironmentReader = std::function<std::optional<std::string>(std::string_view)>;
 
-    explicit CLI(std::string name = {}, std::string version = "0.1.0")
+    explicit CLI(std::string name = {}, std::string version = "0.2.0")
         : Command(std::move(name))
         , version_(std::move(version)) {}
 
@@ -291,13 +291,22 @@ complete -c {{EXECUTABLE}} -f -a '({{FUNCTION}})'
             auto state = initial_parse_state();
             auto arguments = ArgumentsMap{};
             auto options = OptionsMap{};
+            auto argument_sources = std::unordered_map<std::string, ValueSource>{};
+            auto option_sources = std::unordered_map<std::string, ValueSource>{};
             auto passthrough_arguments = std::vector<std::string>{};
+            auto warnings = std::vector<std::string>{};
 
-            parse_active_command_tokens(state, tokens, arguments, options, passthrough_arguments);
+            parse_active_command_tokens(
+                state, tokens, arguments, options, argument_sources, option_sources, passthrough_arguments, warnings);
             const auto command_line_arguments = collect_keys(arguments);
             const auto command_line_options = collect_keys(options);
 
-            apply_environment_values(*state.active, arguments, options);
+            if (state.active != this && state.active->is_deprecated()) {
+                warnings.push_back("Deprecated command `" + detail::join_strings(state.command_path, " ") + "`: " +
+                                   state.active->deprecated_message());
+            }
+
+            apply_environment_values(*state.active, arguments, options, argument_sources, option_sources);
 
             if (config_document.has_value()) {
                 apply_config_values(*state.active,
@@ -305,12 +314,17 @@ complete -c {{EXECUTABLE}} -f -a '({{FUNCTION}})'
                                     *config_document,
                                     arguments,
                                     options,
+                                    argument_sources,
+                                    option_sources,
                                     command_line_arguments,
                                     command_line_options);
             }
 
-            finalize_values(*state.active, arguments, options);
+            finalize_values(*state.active, arguments, options, argument_sources, option_sources);
             validate_option_relationships(*state.active, options);
+            collect_deprecation_warnings(*state.active, options, option_sources, warnings);
+
+            emit_warnings(warnings, err);
 
             if (!state.active->handler()) {
                 out << state.active->help(state.command_path) << '\n';
@@ -321,9 +335,12 @@ complete -c {{EXECUTABLE}} -f -a '({{FUNCTION}})'
                                                state.command_path,
                                                std::move(arguments),
                                                std::move(options),
+                                               std::move(argument_sources),
+                                               std::move(option_sources),
                                                std::move(passthrough_arguments)));
             return 0;
         } catch (const FlowControl& flow) {
+            emit_warnings(flow.warnings, err);
             if (!flow.output.empty()) {
                 (flow.to_stderr ? err : out) << flow.output << '\n';
             }
@@ -339,6 +356,7 @@ private:
         int exit_code = 0;
         std::string output;
         bool to_stderr = false;
+        std::vector<std::string> warnings;
     };
 
     struct ParseState {
@@ -445,7 +463,10 @@ private:
                                      const std::vector<std::string>& tokens,
                                      ArgumentsMap& arguments,
                                      OptionsMap& options,
-                                     std::vector<std::string>& passthrough_arguments) const {
+                                     std::unordered_map<std::string, ValueSource>& argument_sources,
+                                     std::unordered_map<std::string, ValueSource>& option_sources,
+                                     std::vector<std::string>& passthrough_arguments,
+                                     std::vector<std::string>& warnings) const {
         auto runtime_state = initial_parse_state();
 
         for (std::size_t index = 0; index < tokens.size(); ++index) {
@@ -470,22 +491,28 @@ private:
             }
 
             if (parsed.is_flag && !runtime_state.end_of_flags && (parsed.key == "help" || parsed.key == "h")) {
-                throw FlowControl{0, runtime_state.active->help(runtime_state.command_path), false};
+                throw FlowControl{0, runtime_state.active->help(runtime_state.command_path), false, warnings};
             }
 
             if (parsed.is_flag && !runtime_state.end_of_flags && (parsed.key == "version" || parsed.key == "v")) {
                 throw FlowControl{
                     0,
                     std::string(name().empty() ? "clix" : name()) + " v" + version_,
-                    false};
+                    false,
+                    warnings};
             }
 
             if (!runtime_state.end_of_flags && !parsed.is_flag && runtime_state.positional_index == 0) {
-                if (const auto* subcommand = runtime_state.active->find_subcommand(raw); subcommand != nullptr) {
-                    runtime_state.command_path.push_back(subcommand->name());
-                    runtime_state.active = subcommand;
+                if (const auto subcommand = runtime_state.active->find_subcommand_lookup(raw); subcommand.has_value()) {
+                    runtime_state.command_path.push_back(subcommand->command->name());
+                    runtime_state.active = subcommand->command;
                     runtime_state.subcommand_token_count = index + 1;
                     runtime_state.positional_index = 0;
+                    if (subcommand->used_alias && subcommand->deprecated_alias_message.has_value()) {
+                        warnings.push_back("Deprecated command alias `" + subcommand->matched_token + "` for `" +
+                                           subcommand->command->name() + "`: " +
+                                           *subcommand->deprecated_alias_message);
+                    }
                     continue;
                 }
             }
@@ -548,6 +575,18 @@ private:
                             const auto value = CliValue(true);
                             runtime_state.active->validate_option_value(option_name, value);
                             options[option_name] = value;
+                            option_sources[option_name] = ValueSource::command_line;
+                            if (!option_config.deprecated_message.empty()) {
+                                warnings.push_back("Deprecated option `" +
+                                                   detail::prefixed_option_name(option_name) + "`: " +
+                                                   option_config.deprecated_message);
+                            }
+                            if (option->used_alias && option->deprecated_alias_message.has_value()) {
+                                warnings.push_back("Deprecated option alias `" +
+                                                   detail::prefixed_alias_name(option->matched_token) + "` for `" +
+                                                   detail::prefixed_option_name(option_name) + "`: " +
+                                                   *option->deprecated_alias_message);
+                            }
                             continue;
                         }
 
@@ -555,6 +594,18 @@ private:
                             options[option_name] = runtime_state.active->parse_option_value(
                                 option_name,
                                 parsed.key.substr(alias_index + 1));
+                            option_sources[option_name] = ValueSource::command_line;
+                            if (!option_config.deprecated_message.empty()) {
+                                warnings.push_back("Deprecated option `" +
+                                                   detail::prefixed_option_name(option_name) + "`: " +
+                                                   option_config.deprecated_message);
+                            }
+                            if (option->used_alias && option->deprecated_alias_message.has_value()) {
+                                warnings.push_back("Deprecated option alias `" +
+                                                   detail::prefixed_alias_name(option->matched_token) + "` for `" +
+                                                   detail::prefixed_option_name(option_name) + "`: " +
+                                                   *option->deprecated_alias_message);
+                            }
                             break;
                         }
 
@@ -571,6 +622,18 @@ private:
                         }
 
                         options[option_name] = runtime_state.active->parse_option_value(option_name, tokens[index + 1]);
+                        option_sources[option_name] = ValueSource::command_line;
+                        if (!option_config.deprecated_message.empty()) {
+                            warnings.push_back("Deprecated option `" +
+                                               detail::prefixed_option_name(option_name) + "`: " +
+                                               option_config.deprecated_message);
+                        }
+                        if (option->used_alias && option->deprecated_alias_message.has_value()) {
+                            warnings.push_back("Deprecated option alias `" +
+                                               detail::prefixed_alias_name(option->matched_token) + "` for `" +
+                                               detail::prefixed_option_name(option_name) + "`: " +
+                                               *option->deprecated_alias_message);
+                        }
                         ++index;
                     }
                     continue;
@@ -634,6 +697,18 @@ private:
                         runtime_state.active->validate_option_value(option_name, value);
                         options[option_name] = value;
                     }
+                    option_sources[option_name] = ValueSource::command_line;
+                    if (!option_config.deprecated_message.empty()) {
+                        warnings.push_back("Deprecated option `" +
+                                           detail::prefixed_option_name(option_name) + "`: " +
+                                           option_config.deprecated_message);
+                    }
+                    if (option->used_alias && option->deprecated_alias_message.has_value()) {
+                        warnings.push_back("Deprecated option alias `" +
+                                           detail::prefixed_alias_name(option->matched_token) + "` for `" +
+                                           detail::prefixed_option_name(option_name) + "`: " +
+                                           *option->deprecated_alias_message);
+                    }
                     continue;
                 }
 
@@ -651,6 +726,18 @@ private:
 
                 if (parsed.value.has_value()) {
                     options[option_name] = runtime_state.active->parse_option_value(option_name, *parsed.value);
+                    option_sources[option_name] = ValueSource::command_line;
+                    if (!option_config.deprecated_message.empty()) {
+                        warnings.push_back("Deprecated option `" +
+                                           detail::prefixed_option_name(option_name) + "`: " +
+                                           option_config.deprecated_message);
+                    }
+                    if (option->used_alias && option->deprecated_alias_message.has_value()) {
+                        warnings.push_back("Deprecated option alias `" +
+                                           detail::prefixed_alias_name(option->matched_token) + "` for `" +
+                                           detail::prefixed_option_name(option_name) + "`: " +
+                                           *option->deprecated_alias_message);
+                    }
                     continue;
                 }
 
@@ -667,6 +754,17 @@ private:
                 }
 
                 options[option_name] = runtime_state.active->parse_option_value(option_name, tokens[index + 1]);
+                option_sources[option_name] = ValueSource::command_line;
+                if (!option_config.deprecated_message.empty()) {
+                    warnings.push_back("Deprecated option `" + detail::prefixed_option_name(option_name) + "`: " +
+                                       option_config.deprecated_message);
+                }
+                if (option->used_alias && option->deprecated_alias_message.has_value()) {
+                    warnings.push_back("Deprecated option alias `" +
+                                       detail::prefixed_alias_name(option->matched_token) + "` for `" +
+                                       detail::prefixed_option_name(option_name) + "`: " +
+                                       *option->deprecated_alias_message);
+                }
                 ++index;
                 continue;
             }
@@ -675,6 +773,7 @@ private:
             if (has_pending_positional) {
                 const auto& argument_name = positional_defs[runtime_state.positional_index].first;
                 arguments[argument_name] = runtime_state.active->parse_argument_value(argument_name, raw);
+                argument_sources[argument_name] = ValueSource::command_line;
                 ++runtime_state.positional_index;
                 continue;
             }
@@ -712,7 +811,9 @@ private:
 
     void finalize_values(const Command& command,
                          ArgumentsMap& arguments,
-                         OptionsMap& options) const {
+                         OptionsMap& options,
+                         std::unordered_map<std::string, ValueSource>& argument_sources,
+                         std::unordered_map<std::string, ValueSource>& option_sources) const {
         for (const auto& [argument_name, argument_config] : command.arguments_definitions()) {
             if (detail::contains_key(arguments, argument_name)) {
                 continue;
@@ -721,6 +822,7 @@ private:
             if (argument_config.default_value.has_value()) {
                 command.validate_argument_value(argument_name, *argument_config.default_value);
                 arguments.emplace(argument_name, *argument_config.default_value);
+                argument_sources.insert_or_assign(argument_name, ValueSource::default_value);
                 continue;
             }
 
@@ -748,6 +850,7 @@ private:
             if (option_config.default_value.has_value()) {
                 command.validate_option_value(option_name, *option_config.default_value);
                 options.emplace(option_name, *option_config.default_value);
+                option_sources.insert_or_assign(option_name, ValueSource::default_value);
                 continue;
             }
 
@@ -755,6 +858,7 @@ private:
                 const auto value = CliValue(false);
                 command.validate_option_value(option_name, value);
                 options.emplace(option_name, value);
+                option_sources.insert_or_assign(option_name, ValueSource::default_value);
                 continue;
             }
 
@@ -774,7 +878,9 @@ private:
 
     void apply_environment_values(const Command& command,
                                   ArgumentsMap& arguments,
-                                  OptionsMap& options) const {
+                                  OptionsMap& options,
+                                  std::unordered_map<std::string, ValueSource>& argument_sources,
+                                  std::unordered_map<std::string, ValueSource>& option_sources) const {
         for (const auto& entry : command.arguments_definitions()) {
             const auto& argument_name = entry.first;
             const auto& argument_config = entry.second;
@@ -790,6 +896,7 @@ private:
                 }
 
                 arguments.emplace(argument_name, command.parse_argument_value(argument_name, *value));
+                argument_sources.insert_or_assign(argument_name, ValueSource::environment);
                 break;
             }
         }
@@ -809,6 +916,7 @@ private:
                 }
 
                 options.emplace(option_name, command.parse_option_value(option_name, *value));
+                option_sources.insert_or_assign(option_name, ValueSource::environment);
                 break;
             }
         }
@@ -828,10 +936,46 @@ private:
         }
 
         if (config->kind == ValueKind::boolean) {
-            return std::get<bool>(iterator->second);
+            return value_cast<bool>(iterator->second);
         }
 
         return true;
+    }
+
+    void collect_deprecation_warnings(const Command& command,
+                                      const OptionsMap& options,
+                                      const std::unordered_map<std::string, ValueSource>& option_sources,
+                                      std::vector<std::string>& warnings) const {
+        for (const auto& option : command.visible_options()) {
+            const auto& option_name = option.name;
+            const auto& option_config = *option.config;
+
+            if (option_config.deprecated_message.empty()) {
+                continue;
+            }
+
+            if (!option_is_active(command, options, option_name)) {
+                continue;
+            }
+
+            const auto source = option_sources.find(option_name);
+            if (source == option_sources.end() || source->second == ValueSource::default_value) {
+                continue;
+            }
+
+            warnings.push_back("Deprecated option `" + detail::prefixed_option_name(option_name) + "`: " +
+                               option_config.deprecated_message);
+        }
+    }
+
+    static void emit_warnings(const std::vector<std::string>& warnings, std::ostream& err) {
+        std::unordered_set<std::string> seen;
+        for (const auto& warning : warnings) {
+            if (warning.empty() || !seen.insert(warning).second) {
+                continue;
+            }
+            err << "warning: " << warning << '\n';
+        }
     }
 
     void validate_option_relationships(const Command& command,
@@ -961,6 +1105,8 @@ private:
                              const ConfigDocument& document,
                              ArgumentsMap& arguments,
                              OptionsMap& options,
+                             std::unordered_map<std::string, ValueSource>& argument_sources,
+                             std::unordered_map<std::string, ValueSource>& option_sources,
                              const std::unordered_set<std::string>& protected_arguments,
                              const std::unordered_set<std::string>& protected_options) const {
         std::unordered_map<std::string, std::string> merged_values;
@@ -996,6 +1142,7 @@ private:
             if (iterator != merged_values.end()) {
                 arguments.insert_or_assign(argument_name,
                                            command.parse_argument_value(argument_name, iterator->second));
+                argument_sources.insert_or_assign(argument_name, ValueSource::config_file);
             }
         }
 
@@ -1009,6 +1156,7 @@ private:
             if (iterator != merged_values.end()) {
                 options.insert_or_assign(option_name,
                                          command.parse_option_value(option_name, iterator->second));
+                option_sources.insert_or_assign(option_name, ValueSource::config_file);
             }
         }
     }

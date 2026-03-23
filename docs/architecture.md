@@ -9,6 +9,9 @@ The same command model drives:
 - help output
 - JSON/TOML config file loading
 - environment-variable resolution
+- deprecation warnings
+- schema export
+- Markdown export
 - shell completion
 
 ## Core Types
@@ -34,8 +37,10 @@ Commands are trees. Each node can define:
 - positional arguments
 - options
 - option groups
+- custom typed parsers
 - validators
 - config-backed values
+- deprecation metadata
 - completion metadata
 - one action handler
 
@@ -59,6 +64,8 @@ Config files themselves are discovered in this order:
 If a configured path is extensionless, `clix` probes the configured allowed extensions in order.
 
 After values are resolved, validators and option relationships are enforced.
+
+Resolved values also keep source metadata so handlers can inspect whether a value came from the command line, config, environment, or defaults.
 
 ## When To Use Routers
 
