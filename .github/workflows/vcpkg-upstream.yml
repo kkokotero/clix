@@ -1,0 +1,121 @@
+name: Prepare vcpkg Upstream Update
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version to prepare for the upstream vcpkg port.
+        required: true
+        type: string
+      ref:
+        description: Optional git ref to package. Defaults to v<version>.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-upstream-update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out clix
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Resolve release metadata
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            raw_ref="${{ github.event.release.tag_name }}"
+            version="${raw_ref#v}"
+            source_ref="${raw_ref}"
+          else
+            version="${{ inputs.version }}"
+            source_ref="${{ inputs.ref }}"
+            if [[ -z "${source_ref}" ]]; then
+              source_ref="v${version}"
+            fi
+          fi
+
+          echo "CLIX_VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "CLIX_SOURCE_REF=${source_ref}" >> "${GITHUB_ENV}"
+
+      - name: Refresh local port metadata
+        shell: bash
+        run: |
+          python scripts/update_vcpkg_port.py \
+            --version "${CLIX_VERSION}" \
+            --ref "${CLIX_SOURCE_REF}"
+
+      - name: Check out microsoft/vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          path: upstream-vcpkg
+
+      - name: Bootstrap upstream vcpkg
+        shell: bash
+        run: ./upstream-vcpkg/bootstrap-vcpkg.sh
+
+      - name: Prepare upstream branch
+        shell: bash
+        run: |
+          branch_name="clix-${CLIX_VERSION}"
+          git -C upstream-vcpkg checkout -b "${branch_name}"
+          rm -rf upstream-vcpkg/ports/clix
+          mkdir -p upstream-vcpkg/ports/clix
+          cp ports/clix/portfile.cmake upstream-vcpkg/ports/clix/portfile.cmake
+          cp ports/clix/vcpkg.json upstream-vcpkg/ports/clix/vcpkg.json
+          cp ports/clix/usage upstream-vcpkg/ports/clix/usage
+
+          ./upstream-vcpkg/vcpkg x-add-version clix --overwrite-version
+
+          git -C upstream-vcpkg config user.name "github-actions[bot]"
+          git -C upstream-vcpkg config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C upstream-vcpkg add ports/clix versions
+          git -C upstream-vcpkg commit -m "[clix] add/update to ${CLIX_VERSION}"
+
+          echo "CLIX_VCPKG_BRANCH=${branch_name}" >> "${GITHUB_ENV}"
+
+      - name: Export patch artifact
+        shell: bash
+        run: |
+          git -C upstream-vcpkg format-patch -1 HEAD --stdout > "clix-vcpkg-${CLIX_VERSION}.patch"
+
+      - name: Upload patch artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clix-vcpkg-${{ env.CLIX_VERSION }}
+          path: clix-vcpkg-${{ env.CLIX_VERSION }}.patch
+
+      - name: Push branch to fork
+        if: ${{ secrets.VCPKG_FORK_REPOSITORY != '' && secrets.VCPKG_FORK_TOKEN != '' }}
+        shell: bash
+        env:
+          VCPKG_FORK_REPOSITORY: ${{ secrets.VCPKG_FORK_REPOSITORY }}
+          VCPKG_FORK_TOKEN: ${{ secrets.VCPKG_FORK_TOKEN }}
+        run: |
+          git -C upstream-vcpkg remote add fork "https://x-access-token:${VCPKG_FORK_TOKEN}@github.com/${VCPKG_FORK_REPOSITORY}.git"
+          git -C upstream-vcpkg push fork "${CLIX_VCPKG_BRANCH}" --force
+
+      - name: Open upstream pull request
+        if: ${{ secrets.VCPKG_FORK_REPOSITORY != '' && secrets.VCPKG_FORK_TOKEN != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.VCPKG_FORK_TOKEN }}
+          VCPKG_FORK_REPOSITORY: ${{ secrets.VCPKG_FORK_REPOSITORY }}
+        run: |
+          fork_owner="${VCPKG_FORK_REPOSITORY%%/*}"
+          gh pr create \
+            --repo microsoft/vcpkg \
+            --base master \
+            --head "${fork_owner}:${CLIX_VCPKG_BRANCH}" \
+            --title "[clix] add/update to ${CLIX_VERSION}" \
+            --body "Automated release update prepared from https://github.com/kkokotero/clix/releases/tag/${CLIX_SOURCE_REF}."

@@ -1,4 +1,6 @@
 name: CI
+permissions:
+  contents: read
 
 on:
   push:
@@ -54,3 +56,73 @@ jobs:
       - name: Install
         shell: bash
         run: cmake --install build --config ${{ matrix.build_type }} --prefix "$RUNNER_TEMP/clix-install"
+
+  vcpkg-smoke-test:
+    name: vcpkg smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Acquire vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          path: vcpkg
+
+      - name: Bootstrap vcpkg
+        shell: bash
+        run: ./vcpkg/bootstrap-vcpkg.sh
+
+      - name: Create smoke test project
+        shell: bash
+        run: |
+          baseline="$(git -C vcpkg rev-parse HEAD)"
+          project_dir="${RUNNER_TEMP}/clix-vcpkg-smoke"
+          mkdir -p "${project_dir}"
+
+          cat > "${project_dir}/vcpkg.json" <<EOF
+          {
+            "name": "clix-vcpkg-smoke",
+            "version-string": "0.0.0",
+            "builtin-baseline": "${baseline}",
+            "dependencies": [
+              "clix"
+            ]
+          }
+          EOF
+
+          cat > "${project_dir}/CMakeLists.txt" <<'EOF'
+          cmake_minimum_required(VERSION 3.23)
+          project(clix_vcpkg_smoke LANGUAGES CXX)
+
+          find_package(clix CONFIG REQUIRED)
+
+          add_executable(clix_vcpkg_smoke main.cpp)
+          target_link_libraries(clix_vcpkg_smoke PRIVATE clix::clix)
+          target_compile_features(clix_vcpkg_smoke PRIVATE cxx_std_17)
+          EOF
+
+          cat > "${project_dir}/main.cpp" <<'EOF'
+          #include <clix/cli.hpp>
+
+          int main(int argc, char** argv) {
+              clix::CLI cli("smoke", "0.0.0");
+              return cli.run(argc, argv);
+          }
+          EOF
+
+          echo "CLIX_VCPKG_SMOKE_DIR=${project_dir}" >> "${GITHUB_ENV}"
+
+      - name: Configure smoke test project
+        shell: bash
+        run: >
+          cmake -S "${CLIX_VCPKG_SMOKE_DIR}" -B "${CLIX_VCPKG_SMOKE_DIR}/build"
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_OVERLAY_PORTS="${GITHUB_WORKSPACE}/ports"
+
+      - name: Build smoke test project
+        shell: bash
+        run: cmake --build "${CLIX_VCPKG_SMOKE_DIR}/build" --parallel

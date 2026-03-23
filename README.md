@@ -26,15 +26,15 @@ The project also keeps a few strong constraints on purpose:
 - header-only distribution
 - no external runtime dependencies
 - readable C++17 API
-- modular includes through `<CLIX/...>`
+- modular includes through `<clix/...>`
 - features that stay small enough to understand
 
 ## Highlights
 
-- Header-only package with clean `find_package(CLIX CONFIG REQUIRED)` integration
+- Header-only package with clean `find_package(clix CONFIG REQUIRED)` integration
 - No external runtime dependencies
 - C++17 baseline
-- Modular public includes through `<CLIX/...>`
+- Modular public includes through `<clix/...>`
 - Fluent builders for arguments and options
 - Optional routers for modular command registration in large projects
 - Nested subcommands with inherited global options
@@ -52,8 +52,8 @@ The project also keeps a few strong constraints on purpose:
 ### CMake package
 
 ```cmake
-find_package(CLIX CONFIG REQUIRED)
-target_link_libraries(your_target PRIVATE CLIX::CLIX)
+find_package(clix CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE clix::clix)
 ```
 
 ### Includes
@@ -61,16 +61,28 @@ target_link_libraries(your_target PRIVATE CLIX::CLIX)
 Preferred modular includes:
 
 ```cpp
-#include <CLIX/cli.hpp>
-#include <CLIX/validators.hpp>
-#include <CLIX/router.hpp>
+#include <clix/cli.hpp>
+#include <clix/validators.hpp>
+#include <clix/router.hpp>
 ```
 
 Umbrella include:
 
 ```cpp
-#include <CLIX.hpp>
+#include <clix.hpp>
 ```
+
+### vcpkg
+
+The goal for `clix` is direct installation from the official `microsoft/vcpkg` curated registry:
+
+```bash
+vcpkg install clix
+```
+
+This repository keeps an upstream-ready port under `ports/clix` and validates it in CI as an overlay port. That means the packaging work stays tested here, but direct consumption from the official registry still depends on an upstream PR to `microsoft/vcpkg`.
+
+On each GitHub release, the `Prepare vcpkg Upstream Update` workflow refreshes the port metadata and creates a ready-to-submit patch against the latest `microsoft/vcpkg`. If you configure a fork and token for the workflow, it can also push a branch and open the upstream PR automatically.
 
 ## Quick Start
 
@@ -79,17 +91,17 @@ Umbrella include:
 #include <iostream>
 #include <string>
 
-#include <CLIX/cli.hpp>
+#include <clix/cli.hpp>
 
 int main(int argc, char** argv) {
-    CLIX::CLI cli("hello", "1.0.0");
+    clix::CLI cli("hello", "1.0.0");
     cli.description("Small example built with CLIX.");
 
     auto& greet = cli.command("greet").description("Print a greeting.");
     greet.arg("name").description("Name to greet.").label("name");
     greet.opt("caps").alias("c").description("Render the greeting in uppercase.");
 
-    greet.action([](const CLIX::Invocation& invocation) {
+    greet.action([](const clix::Invocation& invocation) {
         auto message = std::string("Hello, ") + invocation.argument<std::string>("name") + "!";
         if (invocation.option<bool>("caps")) {
             for (auto& character : message) {
@@ -108,13 +120,13 @@ int main(int argc, char** argv) {
 
 `CLIX` is centered on a small set of runtime types:
 
-- `CLIX::CLI`
+- `clix::CLI`
   - The root command entry point.
-- `CLIX::Command`
+- `clix::Command`
   - The builder used by the root and by nested subcommands.
-- `CLIX::Invocation`
+- `clix::Invocation`
   - The immutable runtime view delivered to handlers.
-- `CLIX::Router`
+- `clix::Router`
   - An optional composition layer for modular command registration.
 
 The same declared schema drives:
@@ -135,14 +147,14 @@ create.arg("name")
     .description("Project name.")
     .label("name")
     .env("WORKSPACE_NAME")
-    .validate(CLIX::validators::non_empty_string());
+    .validate(clix::validators::non_empty_string());
 
-create.opt("jobs", CLIX::ValueKind::number)
+create.opt("jobs", clix::ValueKind::number)
     .alias("j")
     .description("Parallel jobs.")
     .label("count")
-    .default_value(CLIX::CliValue(4.0))
-    .validate(CLIX::validators::number_range(1.0, 32.0));
+    .default_value(clix::CliValue(4.0))
+    .validate(clix::validators::number_range(1.0, 32.0));
 ```
 
 Available builder features include:
@@ -172,25 +184,25 @@ Available builder features include:
 | `ValueKind::string` | `std::string` | free-form text |
 | `ValueKind::number` | `double` | numeric parameters |
 | `ValueKind::choice` | `std::string` | enumerated string values |
-| `ValueKind::path` | `CLIX::Path` | files and directories |
-| `ValueKind::time` | `CLIX::Time` | durations / time-like values |
-| `ValueKind::size` | `CLIX::Size` | memory / byte-size values |
-| `ValueKind::json` | `CLIX::JsonObject` | structured JSON payloads |
+| `ValueKind::path` | `clix::Path` | files and directories |
+| `ValueKind::time` | `clix::Time` | durations / time-like values |
+| `ValueKind::size` | `clix::Size` | memory / byte-size values |
+| `ValueKind::json` | `clix::JsonObject` | structured JSON payloads |
 | `ValueKind::boolean_array` | `std::vector<bool>` | repeated booleans |
 | `ValueKind::string_array` | `std::vector<std::string>` | repeated strings |
 | `ValueKind::number_array` | `std::vector<double>` | repeated numbers |
-| `ValueKind::path_array` | `std::vector<CLIX::Path>` | repeated paths |
-| `ValueKind::time_array` | `std::vector<CLIX::Time>` | repeated durations |
-| `ValueKind::size_array` | `std::vector<CLIX::Size>` | repeated sizes |
+| `ValueKind::path_array` | `std::vector<clix::Path>` | repeated paths |
+| `ValueKind::time_array` | `std::vector<clix::Time>` | repeated durations |
+| `ValueKind::size_array` | `std::vector<clix::Size>` | repeated sizes |
 
 Examples:
 
 ```cpp
 command.opt("verbose");  // boolean
-command.opt("jobs", CLIX::ValueKind::number);  // double
-command.opt("format", CLIX::ValueKind::choice).choices({"json", "yaml"});
-command.arg("manifest", CLIX::ValueKind::path);
-command.opt("tag", CLIX::ValueKind::string_array);
+command.opt("jobs", clix::ValueKind::number);  // double
+command.opt("format", clix::ValueKind::choice).choices({"json", "yaml"});
+command.arg("manifest", clix::ValueKind::path);
+command.opt("tag", clix::ValueKind::string_array);
 ```
 
 ## Nested Subcommands
@@ -211,10 +223,10 @@ workspace --verbose project create app
 
 ## Routers
 
-`CLIX::Router` lets large applications register commands in modules and mount them under prefixes.
+`clix::Router` lets large applications register commands in modules and mount them under prefixes.
 
 ```cpp
-CLIX::Router app_router;
+clix::Router app_router;
 app_router.use("project", make_project_router());
 app_router.use("release", make_release_router());
 app_router.mount(cli);
@@ -226,10 +238,10 @@ This keeps command registration modular while preserving the same `Command` buil
 
 Built-in validators include:
 
-- `CLIX::validators::non_empty_string()`
-- `CLIX::validators::number_range(min, max)`
-- `CLIX::validators::positive_number()`
-- `CLIX::validators::existing_path()`
+- `clix::validators::non_empty_string()`
+- `clix::validators::number_range(min, max)`
+- `clix::validators::positive_number()`
+- `clix::validators::existing_path()`
 
 Custom validators are regular callables that return `std::optional<std::string>`.
 
@@ -256,7 +268,7 @@ Arguments and options can read from one or more environment variables:
 
 ```cpp
 command.arg("name").env("APP_NAME");
-command.opt("language", CLIX::ValueKind::choice).env("APP_LANGUAGE");
+command.opt("language", clix::ValueKind::choice).env("APP_LANGUAGE");
 ```
 
 This is useful when you want non-interactive defaults without giving up the command-line UX.
@@ -270,7 +282,7 @@ By default `CLIX` reads from the process environment through `std::getenv`.
 You can also provide a custom reader:
 
 ```cpp
-CLIX::CLI cli("demo");
+clix::CLI cli("demo");
 
 cli.environment_reader([](std::string_view name) -> std::optional<std::string> {
     if (name == "APP_NAME") {
@@ -294,7 +306,7 @@ This is useful for:
 Enable config file loading once on the root CLI:
 
 ```cpp
-CLIX::ConfigFileSettings config;
+clix::ConfigFileSettings config;
 config.environment_variables = {"APP_CONFIG"};
 config.default_filenames = {"app.toml", "app.json"};
 config.allowed_extensions = {".toml", ".json"};
