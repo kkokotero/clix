@@ -21,6 +21,9 @@ permissions:
 jobs:
   prepare-upstream-update:
     runs-on: ubuntu-latest
+    env:
+      VCPKG_FORK_REPOSITORY: ${{ secrets.VCPKG_FORK_REPOSITORY }}
+      VCPKG_FORK_TOKEN: ${{ secrets.VCPKG_FORK_TOKEN }}
 
     steps:
       - name: Check out clix
@@ -96,21 +99,17 @@ jobs:
           path: clix-vcpkg-${{ env.CLIX_VERSION }}.patch
 
       - name: Push branch to fork
-        if: ${{ secrets.VCPKG_FORK_REPOSITORY != '' && secrets.VCPKG_FORK_TOKEN != '' }}
+        if: ${{ env.VCPKG_FORK_REPOSITORY != '' && env.VCPKG_FORK_TOKEN != '' }}
         shell: bash
-        env:
-          VCPKG_FORK_REPOSITORY: ${{ secrets.VCPKG_FORK_REPOSITORY }}
-          VCPKG_FORK_TOKEN: ${{ secrets.VCPKG_FORK_TOKEN }}
         run: |
           git -C upstream-vcpkg remote add fork "https://x-access-token:${VCPKG_FORK_TOKEN}@github.com/${VCPKG_FORK_REPOSITORY}.git"
           git -C upstream-vcpkg push fork "${CLIX_VCPKG_BRANCH}" --force
 
       - name: Open upstream pull request
-        if: ${{ secrets.VCPKG_FORK_REPOSITORY != '' && secrets.VCPKG_FORK_TOKEN != '' }}
+        if: ${{ env.VCPKG_FORK_REPOSITORY != '' && env.VCPKG_FORK_TOKEN != '' }}
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.VCPKG_FORK_TOKEN }}
-          VCPKG_FORK_REPOSITORY: ${{ secrets.VCPKG_FORK_REPOSITORY }}
+          GH_TOKEN: ${{ env.VCPKG_FORK_TOKEN }}
         run: |
           fork_owner="${VCPKG_FORK_REPOSITORY%%/*}"
           gh pr create \
