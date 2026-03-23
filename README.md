@@ -74,15 +74,25 @@ Umbrella include:
 
 ### vcpkg
 
-The goal for `clix` is direct installation from the official `microsoft/vcpkg` curated registry:
+The supported vcpkg flow today is the bundled overlay port that lives inside this repository:
 
 ```bash
-vcpkg install clix
+git clone https://github.com/kkokotero/clix
+vcpkg install clix --overlay-ports=<path-to-clix>/vcpkg/ports
 ```
 
-This repository keeps an upstream-ready port under `ports/clix` and validates it in CI as an overlay port. That means the packaging work stays tested here, but direct consumption from the official registry still depends on an upstream PR to `microsoft/vcpkg`.
+That path is lightweight, works today, and keeps the port close to the library sources. It also matches the alternative that the vcpkg maintainers recommended while `clix` is still growing toward their curated-registry maturity bar.
 
-On each GitHub release, the `Prepare vcpkg Upstream Update` workflow refreshes the port metadata and creates a ready-to-submit patch against the latest `microsoft/vcpkg`. If you configure a fork and token for the workflow, it can also push a branch and open the upstream PR automatically.
+The port files live under `vcpkg/ports/clix`, so users can point `--overlay-ports` at this repository directly.
+
+From there, regular CMake integration works as expected:
+
+```cmake
+find_package(clix CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE clix::clix)
+```
+
+This repository still keeps the port upstream-friendly. If `clix` later meets the curated-registry maturity bar, the same port can be used as the base for another submission to `microsoft/vcpkg`.
 
 ## Quick Start
 

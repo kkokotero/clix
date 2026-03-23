@@ -74,9 +74,9 @@ jobs:
           git -C upstream-vcpkg checkout -b "${branch_name}"
           rm -rf upstream-vcpkg/ports/clix
           mkdir -p upstream-vcpkg/ports/clix
-          cp ports/clix/portfile.cmake upstream-vcpkg/ports/clix/portfile.cmake
-          cp ports/clix/vcpkg.json upstream-vcpkg/ports/clix/vcpkg.json
-          cp ports/clix/usage upstream-vcpkg/ports/clix/usage
+          cp vcpkg/ports/clix/portfile.cmake upstream-vcpkg/ports/clix/portfile.cmake
+          cp vcpkg/ports/clix/vcpkg.json upstream-vcpkg/ports/clix/vcpkg.json
+          cp vcpkg/ports/clix/usage upstream-vcpkg/ports/clix/usage
 
           ./upstream-vcpkg/vcpkg x-add-version clix --overwrite-version
 

@@ -121,7 +121,7 @@ jobs:
           cmake -S "${CLIX_VCPKG_SMOKE_DIR}" -B "${CLIX_VCPKG_SMOKE_DIR}/build"
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}/vcpkg/scripts/buildsystems/vcpkg.cmake"
-          -DVCPKG_OVERLAY_PORTS="${GITHUB_WORKSPACE}/ports"
+          -DVCPKG_OVERLAY_PORTS="${GITHUB_WORKSPACE}/vcpkg/ports"
 
       - name: Build smoke test project
         shell: bash

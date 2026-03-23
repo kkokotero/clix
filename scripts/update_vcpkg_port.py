@@ -14,8 +14,8 @@ import urllib.request
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PORT_MANIFEST = ROOT / "ports" / "clix" / "vcpkg.json"
-PORTFILE = ROOT / "ports" / "clix" / "portfile.cmake"
+PORT_MANIFEST = ROOT / "vcpkg" / "ports" / "clix" / "vcpkg.json"
+PORTFILE = ROOT / "vcpkg" / "ports" / "clix" / "portfile.cmake"
 
 
 def parse_args() -> argparse.Namespace:
