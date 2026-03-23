@@ -129,6 +129,37 @@ target_link_libraries(your_target PRIVATE clix::clix)
 
 This repository still keeps the port upstream-friendly. If `clix` later meets the curated-registry maturity bar, the same port can be used as the base for another submission to `microsoft/vcpkg`.
 
+### Conan
+
+The repository also ships a Conan 2 recipe and `test_package`, so `clix` can be packaged and consumed through Conan without adding extra packaging files in a separate repository.
+
+Create the package locally:
+
+```bash
+conan profile detect --force
+conan create . --build=missing
+```
+
+Consume it from another project after it exists in your local cache or remote:
+
+```ini
+[requires]
+clix/0.3.1
+
+[generators]
+CMakeDeps
+CMakeToolchain
+```
+
+Then the CMake integration stays the same:
+
+```cmake
+find_package(clix CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE clix::clix)
+```
+
+Today the Conan support lives in this repository as a first-party recipe. That keeps the package definition versioned alongside the library sources and makes it straightforward to publish to a private remote or to ConanCenter later.
+
 ## Platform Support
 
 `CLIX` keeps the core portable on purpose. The parser, schema model, config resolution, validators, and Markdown export rely on standard C++17 facilities instead of platform-specific runtime dependencies.

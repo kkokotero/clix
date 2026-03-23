@@ -62,6 +62,14 @@ __pycache__/
 venv/
 .env/
 
+# Conan generated files
+conanbuild*
+conanrun*
+conan.lock
+graph_info.json
+test_package/build/
+test_package/CMakeUserPresets.json
+
 # IDE/system
 .vscode/
 .idea/

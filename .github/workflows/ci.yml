@@ -185,3 +185,28 @@ jobs:
       - name: Build smoke test project
         shell: bash
         run: cmake --build "${CLIX_VCPKG_SMOKE_DIR}/build" --parallel
+
+  conan-smoke-test:
+    name: conan smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Conan
+        shell: bash
+        run: python -m pip install --upgrade pip conan
+
+      - name: Detect Conan profile
+        shell: bash
+        run: conan profile detect --force
+
+      - name: Create Conan package
+        shell: bash
+        run: conan create . --build=missing
