@@ -1,8 +1,8 @@
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO kkokotero/clix
-    REF v0.2.0
-    SHA512 b09db83ffdf7593712faa18038e3c5eab9bbdf5ed36f3a30d59bc0b1023bf4ea41e3171ad45e96c84fc1a27711c3c3e420aab9408b70b8d42d5ed80ffc19a0f0
+    REF v0.2.1
+    SHA512 058ed587e9fa65ff6e26f4a6a6842e27ada8d47ab9a4337f3f0791f1dfb7169a84426ba344a9fd130337ea94089c567cf6c7c4589be972e2101e5b00f7a0a1f1
     HEAD_REF main
 )
 
