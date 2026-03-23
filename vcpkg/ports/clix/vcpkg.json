@@ -1,6 +1,6 @@
 {
   "name": "clix",
-  "version-semver": "0.1.0",
+  "version-semver": "0.2.0",
   "description": "A modern header-only C++ CLI toolkit with nested commands, validation, config files, env support, and shell completion.",
   "homepage": "https://github.com/kkokotero/clix",
   "license": "MIT",
